@@ -1,0 +1,30 @@
+{
+  "name": "progress",
+  "version": 1,
+  "description": "Compare the latest tool call with the earlier ones this turn: is the agent repeating itself, and is it getting anywhere.",
+  "state": ["task", "tool", "recent_tools"],
+  "uncertain": [0.3, 0.7],
+  "questions": {
+    "repeating": {
+      "type": "noul",
+      "instructions": "Is `tool` the same call, or nearly the same call with the same result, as one or more entries in `recent_tools`?",
+      "criteria": {
+        "true": "Same tool with the same or trivially different input, producing the same or equivalent output as an earlier entry",
+        "false": "A new call, or the same tool with meaningfully different input or a different outcome"
+      }
+    },
+    "momentum": {
+      "type": "score",
+      "instructions": "Looking at `recent_tools` followed by `tool`, how much progress toward `task` do the calls show?",
+      "criteria": [
+        "Stuck: the same thing is being tried again, or the calls wander with no direction",
+        "Some progress: each call builds on the last, though slowly or with detours",
+        "Clear progress: the calls form a direct path toward the task"
+      ]
+    }
+  },
+  "rules": [
+    { "question": "repeating", "when": { "at_least": 0.7 }, "then": "warn", "reason": "the agent is repeating a tool call" },
+    { "question": "momentum", "when": { "is": "0" }, "then": "warn", "reason": "the agent looks stuck" }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "model-tier",
+  "version": 1,
+  "description": "Pick the model tier the next step deserves from the task and the turn so far. Code maps tiers to model ids.",
+  "state": ["task", "tool", "recent_tools", "assistant_text"],
+  "uncertain": [0.3, 0.7],
+  "questions": {
+    "next_tier": {
+      "type": "choice",
+      "instructions": "Given `task` and the turn so far, which model tier does the next step need?",
+      "criteria": {
+        "cheap": "Mechanical follow-through: run a command, read a file, apply an edit already decided, summarize output",
+        "standard": "Ordinary coding work: write or change code with a clear spec, fix a straightforward error",
+        "frontier": "Hard judgment: design a change across several files, diagnose an unclear failure, reconcile conflicting requirements"
+      }
+    }
+  },
+  "rules": [
+    { "question": "next_tier", "when": { "confidence_below": 0.5 }, "then": "note", "reason": "tier choice is uncertain; default to standard" }
+  ]
+}

@@ -1,0 +1,21 @@
+[package]
+name = "truthsayer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Calibrated yes/no supervision for agent harnesses, built on decision models like TypeSafe Jev"
+
+[features]
+default = ["openrouter"]
+openrouter = ["dep:reqwest"]
+
+[dependencies]
+reqwest = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
