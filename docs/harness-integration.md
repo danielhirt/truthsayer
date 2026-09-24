@@ -1,60 +1,82 @@
 # Harness integration
 
-Where a harness calls the supervisor, what it passes, and what it does with the answer. demerzel is the worked example because it is the first host.
+This page tells you where an agent harness calls the supervisor, what data it gives, and what it does with the report. The Claude Code hook in `crates/truthsayer-cli` is the worked example.
 
-## The three seams
+## The three points in the loop
 
-Every agent loop has the same three moments. A harness needs one hook at each.
+Each agent loop has the same three points. A harness needs one hook at each point.
 
-| Moment | Rubrics | What the harness does with the report |
+| Point | Rubrics | What the harness does with the report |
 | --- | --- | --- |
-| **Tool end**: a tool call finished, its output is in hand, the model has not seen it yet | `tool-result`, `progress`, and `edit` when the tool was an edit or create | `halt`: record an error result for the tool call and end the turn. `escalate`: pause for approval. `warn`: log or annotate the tool result. |
-| **Before the next model call** | `model-tier` | Map the tier to a model id. Optional; only if the harness routes between models. |
-| **Turn end**: the model stopped with text | `turn-end` | `warn` on an unverified claim: show it to the user, or feed one more user-less turn ("verify that claim") if the harness supports it. |
+| **Tool end.** A tool call is complete, and the model did not see the output yet. | `tool-result`, `progress`, and `edit` if the tool changed a file | `halt`: return an error result for the tool call and end the turn. `escalate`: ask the user for approval. `warn`: record the finding, or add it to the tool result. |
+| **Before the next model call** | `model-tier` | Select a model for the tier. Use this rubric only if the harness selects between models. |
+| **Turn end.** The model stopped with text. | `turn-end` | `warn` on a claim that is not verified: show it to the user, or give the model one more turn to verify the claim. |
 
-Everything else stays in the harness: exit codes, approvals, budgets, the session file. The supervisor never sees the prompt and never enters it, so a cached prompt prefix stays byte-stable.
+All other decisions stay in the harness. Examples are exit codes, approvals, budgets, and the session file.
 
-## Building the observation
+The supervisor does not see the prompt and does not change the prompt. Thus, a cached prompt prefix does not change.
 
-`Observation` is deliberately small. The harness fills what it has at that moment.
+## Build the observation
+
+`Observation` is small on purpose. The harness adds the data that it has at that point:
 
 ```rust
-let obs = Observation::new(&turn.user_text)          // capped by the harness
-    .constraint("Do not modify anything under src/auth")   // from config or the system prompt's rules
+let obs = Observation::new(&turn.user_text)                 // shorten long prompts
+    .constraint("Do not modify anything under src/auth")    // from configuration or project rules
     .tool(ToolCall::new(name, input.clone()).output(output_text, is_error))
-    .recent(earlier_call_1)                           // this turn's earlier calls, oldest first
+    .recent(earlier_call_1)                                  // earlier calls in this turn, oldest first
     .recent(earlier_call_2);
 ```
 
-`recent_tools` entries are digested (output cut to 200 chars). `tool.output` is capped at 4000 chars, head and tail. Keep the list to this turn; a dozen entries is plenty for repetition checks.
+The supervisor shortens each string in a `recent_tools` entry to 200 characters. It shortens each string in `tool` to 4000 characters and keeps the start and the end. Include only the calls of the current turn. Twelve entries are sufficient for the repetition check.
 
-Constraints are plain sentences. They come from wherever the harness keeps rules: a config key, a project file, the user's message. The `edit` rubric judges only against what is listed.
+Constraints are plain sentences. A harness can get them from a configuration key, a project file, or the user's message. The `edit` rubric checks the edit against the listed constraints only.
 
-## demerzel
+## Worked example: Claude Code
 
-demerzel's engine (`crates/demerzel-core/src/engine.rs`) already emits the events the seams need and already owns the approval policy, so the supervisor slots in as one more thing the engine consults before continuing.
+Claude Code has hook events at the same points. The `truthsayer hook` command connects them:
 
-**Where.** After the engine records a tool result and before the next model call: the point where `EngineEvent::ToolEnd { name, is_error, output, .. }` is emitted. The engine has the tool name, the input (`ToolRun`), the output, and the turn's history, which is everything `Observation` wants.
+| Point | Claude Code event | Rubrics |
+| --- | --- | --- |
+| Before an edit | `PreToolUse` with the tool `Edit`, `Write`, `MultiEdit`, or `NotebookEdit` | `edit` |
+| Tool end | `PostToolUse` and `PostToolUseFailure` | `tool-result`, `progress` |
+| Turn end | `Stop` | `turn-end` |
 
-**Config.** A `supervisor` table in demerzel's config, off by default:
+The hook gets the data for the observation from two sources:
 
-```toml
-[supervisor]
-enabled = true
-rubrics = ["tool-result", "progress", "edit", "turn-end"]
-constraints = ["Do not modify anything under src/auth"]
-record = "~/.demerzel/supervisor.jsonl"
-on_halt = "stop"        # stop | approve | log
-```
+- **The hook input.** It contains the tool name, the tool input, the tool output or the error, and Claude's final message at a stop.
+- **The session transcript.** The hook reads the transcript for the user's prompt and for the earlier tool calls in the turn. Claude Code writes the transcript asynchronously. Thus, the hook takes the current call from the hook input only.
 
-**What to do with the report.** The engine already has `ApprovalDecision`. Map `Halt` to a denied dispatch with the finding's reason as the tool's error result, `Escalate` to an approval request in `ApprovalMode`'s interactive path, `Warn` to a line in the session record and a TUI card. The recommendation never changes the prompt; the tool result the model sees is the harness's usual one, plus an error string on halt.
+If the transcript does not contain a prompt, the hook removes the questions that refer to `` `task` ``. Without the task, these questions give answers that are not useful.
 
-**What to record.** Attach `JsonlSink` to the configured path. Every call lands with state, answers, findings, latency, and cost. The first real sessions are what the thresholds get tuned from, so run with `on_halt = "log"` first and read the records before letting it stop anything.
+The hook changes the report into Claude Code's response format:
 
-**Cost.** One call per tool end at about $0.00003 and 300 to 1000 ms. For a 40-tool turn that is a cent and under a minute of added wall time, most of it overlappable with rendering. If latency matters, run `supervise` concurrently with the next model call and only block on the result before dispatching the next tool.
+| Recommendation | Before an edit | After a tool call | At a stop |
+| --- | --- | --- | --- |
+| `halt` | Deny the edit. Claude gets the reason. | Block, and give Claude the reason. | Give Claude the finding. |
+| `escalate` | Ask the user to approve the edit. | Give Claude the finding, and show it to the user. | Give Claude the finding. |
+| `warn` | Give Claude the finding. | Give Claude the finding. | Give Claude the finding, and Claude continues one time. |
 
-**Dependency.** Add `truthsayer` as a path or git dependency in `crates/demerzel/Cargo.toml`. The crate pulls `reqwest` with rustls, which demerzel already uses, so no new TLS stack.
+The hook does these steps in `enforce` mode only. For the other modes and the configuration, see [Use truthsayer with Claude Code](claude-code.md).
 
-## Other harnesses
+## Rules for a harness
 
-The same three seams exist in every loop. The TypeScript SDK will expose the same `Observation`, `Supervisor`, and rubric files, so a harness in another language integrates the same way with the same JSON.
+These rules apply to each harness:
+
+- **Do not fail the tool call.** If the judge fails or does not reply before the timeout, continue as if no finding exists. Record the error.
+- **Start with records only.** Run the supervisor without effect for some time. Read the records before you let a finding stop a turn.
+- **Limit the continuations.** If a finding can make the model continue, permit only one continuation for each stop.
+- **Treat project files as untrusted.** A file in the repository can add constraints or turn checks off. It must not change the endpoint, the model, or the record location.
+- **Redact before you send.** `Observation::to_state` redacts common secret formats. Also remove data that you know is secret.
+
+## Cost and latency
+
+Each call costs approximately $0.00003 and takes 300 to 1000 ms. A turn with 40 tool calls costs approximately one cent and adds less than one minute.
+
+To hide the latency, run `supervise` at the same time as the next model call. Wait for the result only before the next tool call starts.
+
+The Claude Code hook uses a different method in `log` mode. It runs the judge call in a background process, because in that mode the result does not change what Claude does.
+
+## Other languages
+
+The same three points exist in each agent loop. The roadmap includes TypeScript and Python SDKs. These SDKs read the same rubric files and use the same `Observation` and `Supervisor` types. Thus, a harness in a different language can use the same rubrics.

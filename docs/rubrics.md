@@ -1,8 +1,12 @@
 # Rubrics
 
-A rubric is a JSON file: a name, the questions to ask, and the rules that turn answers into findings. The files under `rubrics/` are compiled into the Rust crate (`rubric::builtin`) and are the source of truth for every SDK.
+A rubric is a JSON file. It contains a name, the questions to ask, and the rules that change answers into findings.
+
+The Rust crate compiles the files in the `rubrics/` directory into `rubric::builtin`. These files are the source of truth for each SDK.
 
 ## Format
+
+This example shows the three question types and two rules:
 
 ```json
 {
@@ -35,55 +39,62 @@ A rubric is a JSON file: a name, the questions to ask, and the rules that turn a
 }
 ```
 
-| Field | Meaning |
+| Field | Description |
 | --- | --- |
-| `state` | The observation paths the questions reference. Documentation, and a harness can check it supplies them. |
-| `uncertain` | A noul strictly inside this band reads as `uncertain` instead of yes or no. |
-| `questions` | Keyed by an id you choose. Ids are namespaced `rubric.question` on the wire and in reports. |
-| `rules` | Evaluated in order; every rule that holds produces a finding. The report's recommendation is the most severe fired action. |
+| `state` | The observation paths that the questions refer to. This field is for documentation. A harness can also use it to make sure that it supplies these paths. |
+| `uncertain` | A noul that is strictly inside this band has the label `uncertain`, not `yes` or `no`. The default band is 0.3 to 0.7. |
+| `questions` | Questions with an ID that you select. In requests and reports, the ID has the form `rubric.question`. |
+| `rules` | The supervisor applies the rules in sequence. Each rule whose condition is true gives a finding. The recommendation of the report is the most severe action of all findings. |
 
 ### Question types
 
 | Type | `criteria` | Answer |
 | --- | --- | --- |
-| `noul` | optional `{true, false}` descriptions | `noul`: P(yes) |
-| `choice` | required map of option to description | `choice`, `probabilities` per option, `confidence` |
-| `score` | required ordered list of level descriptions (2+) | `score` (expected level), `probabilities` per level, `confidence` |
+| `noul` | Optional. An object with a `true` description and a `false` description. | `noul`: the probability of yes. |
+| `choice` | Required. A map from each option to its description. | `choice`, `probabilities` for each option, and `confidence`. |
+| `score` | Required. A list of two or more level descriptions, from lowest to highest. | `score`: the expected level. Also `probabilities` for each level, and `confidence`. |
 
-All instructions and criteria are plain strings. OpenRouter's adapter rejects structured values.
+All instructions and criteria are plain strings. The OpenRouter adapter does not accept structured values.
 
 ### Rule conditions
 
-Exactly one per rule.
+Each rule has exactly one condition.
 
-| Condition | Holds when |
+| Condition | True when |
 | --- | --- |
-| `at_least: x` | headline value ≥ x (P(yes), P(chosen option), or expected level) |
-| `at_most: x` | headline value ≤ x |
-| `uncertain: true` | a noul inside the rubric's uncertain band |
-| `is: "label"` | the answer's label equals it (a choice option, or a score level index as a string) |
-| `confidence_below: x` | a choice or score whose confidence < x |
+| `at_least: x` | The main value is x or more. The main value is the probability of yes, the probability of the selected option, or the expected level. |
+| `at_most: x` | The main value is x or less. |
+| `uncertain: true` | A noul is inside the uncertain band of the rubric. |
+| `is: "label"` | The label of the answer is equal to the given text. For a choice, the label is the option. For a score, the label is the level index as a string, for example `"0"`. |
+| `confidence_below: x` | The confidence of a choice or a score is less than x. |
 
 ### Actions
 
-`note` records a finding without changing the recommendation. `warn` continues but surfaces it. `escalate` means stop and ask a human. `halt` means stop the turn. The report's recommendation is the highest of these across every fired rule.
+| Action | Effect |
+| --- | --- |
+| `note` | Records a finding. The recommendation does not change. |
+| `warn` | Continue, and show the finding. |
+| `escalate` | Stop, and ask a person. |
+| `halt` | Stop the turn. |
 
-## Writing questions the judge answers well
+The recommendation of the report is the most severe action of all the rules that gave a finding.
 
-The judge reads literally and does not reason across hops. From TypeSafe's jaggedness notes and what jev-lab measured:
+## Write questions that the judge answers well
 
-1. **Name the state paths.** "Does `tool.output` show ..." beats "Did the tool fail". The path tells the judge where to look.
-2. **Put policy in the state, ask about it by path.** "Does the edit violate one of the `constraints`?" with the constraints in the observation, not restated in the question. Then a harness can change its constraints without touching the rubric.
-3. **Write the criteria as the boundary cases.** `true` and `false` descriptions are where you put the examples that would otherwise be misread. A tool that reports "0 tests failed" is not a failure; say so.
-4. **One judgment per question.** "Is it wrong and unrelated" is two questions. Split, then combine in a rule or in harness code.
-5. **Keep numbers out.** Exit codes, counts, durations, dates: compute in the harness and pass a word ("failed", "third repeat") if the judge needs it.
-6. **Align instruction and criteria.** A noul whose `true` text describes a no is answered badly.
-7. **Do not lean on invariants.** A question and its negation need not sum to 1. Ask for the thing you want directly.
-8. **Prefer a choice with an explicit "none" option** when "none of these" is a real outcome. A choice is relative; a noul is absolute.
+The judge reads literally and does not reason in more than one step. TypeSafe's documentation and the author's measurements give these guidelines:
 
-## Testing a rubric
+1. **Name the state paths.** Write "Does `tool.output` show ...", not "Did the tool fail". The path tells the judge where to look.
+2. **Put the policy in the state, and refer to it by path.** Ask "Does the edit break one of the `constraints`?" and put the constraints in the observation. Do not repeat the constraints in the question. Then a harness can change its constraints without a change to the rubric.
+3. **Use the criteria for the difficult cases.** Put the examples that the judge can read incorrectly in the `true` and `false` descriptions. For example, tell the judge that "0 tests failed" is not a failure.
+4. **Ask one thing in each question.** "Is it wrong and not related" is two questions. Write two questions, and combine the answers in a rule or in harness code.
+5. **Keep numbers out of the questions.** Calculate exit codes, counts, durations, and dates in the harness. If the judge needs the result, give it as a word, for example "failed" or "third repeat".
+6. **Make the instruction and the criteria agree.** If the `true` text of a noul describes a no, the judge answers badly.
+7. **Do not expect the answers to agree with each other.** The probabilities of a question and its opposite do not always have a sum of 1. Ask for the thing that you want directly.
+8. **Use a choice with a "none" option when "none of these" is a real result.** A choice compares the options with each other. A noul gives an absolute answer.
 
-`MockJudge` scripts answers by namespaced id, so a rule's behavior is a unit test:
+## Test a rubric
+
+`MockJudge` returns scripted answers for each question ID. Thus, you can test the effect of a rule in a unit test:
 
 ```rust
 let judge = MockJudge::new().noul("edit.violates_constraint", 0.5);
@@ -91,8 +102,14 @@ let report = Supervisor::new(Arc::new(judge)).rubric(builtin::edit()).supervise(
 assert_eq!(report.recommendation, Recommendation::Escalate);
 ```
 
-For the judge's actual behavior, run `cargo run --example supervise` and read the verdicts. Add a case there whenever a rubric question changes.
+To see how the live judge answers, run `cargo run --example supervise` and read the verdicts. When you change a question in a rubric, add a case to this example.
 
-## Tuning from records
+## Adjust thresholds from records
 
-Attach a `JsonlSink`. Every call appends the state, the questions, every answer, the findings, latency, and cost. To re-tune a threshold, filter records for the question, look at the value distribution against what actually happened in those sessions, and move the number in the JSON. No code change.
+Attach a `JsonlSink`. For each call, the sink records the state, the questions, each answer, the findings, the latency, and the cost.
+
+To adjust a threshold, do these steps:
+
+1. Find the records that contain the question.
+2. Compare the values with what really happened in those sessions.
+3. Change the number in the rubric JSON file. You do not need to change code.
