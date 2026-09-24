@@ -1,0 +1,19 @@
+{
+  "name": "truthsayer",
+  "version": "0.1.0",
+  "description": "Uses a calibrated decision model to check each tool call and each final message. By default, it only records the results. In enforce mode, it can deny edits that break your constraints. It can also identify injected instructions and question claims that are not verified.",
+  "author": {
+    "name": "Daniel Christopher Hirt",
+    "url": "https://github.com/danielhirt"
+  },
+  "homepage": "https://github.com/danielhirt/truthsayer",
+  "repository": "https://github.com/danielhirt/truthsayer",
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "supervision",
+    "guardrails",
+    "prompt-injection",
+    "verification"
+  ]
+}

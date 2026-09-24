@@ -211,3 +211,23 @@ fn large_tool_output_is_capped() {
     assert!(out.len() < 5_000);
     assert!(out.contains("[... elided ...]"));
 }
+
+#[test]
+fn tool_input_strings_are_capped() {
+    let big = "x".repeat(10_000);
+    let obs = Observation::new("t")
+        .tool(ToolCall::new(
+            "write",
+            json!({"path": "a.rs", "content": big}),
+        ))
+        .recent(ToolCall::new("write", json!({"content": "y".repeat(1000)})));
+    let state = obs.to_state();
+    let content = state["tool"]["input"]["content"].as_str().unwrap();
+    assert!(content.chars().count() < 4100, "{}", content.len());
+    assert!(content.contains("[... elided ...]"));
+    let recent = state["recent_tools"][0]["input"]["content"]
+        .as_str()
+        .unwrap();
+    assert!(recent.chars().count() < 300);
+    assert_eq!(state["tool"]["input"]["path"], "a.rs");
+}

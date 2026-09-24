@@ -1,0 +1,20 @@
+#!/bin/sh
+# Runs the truthsayer binary as a Claude Code hook.
+# Claude Code passes the hook event on stdin; exec keeps it attached.
+# If the binary is not installed, the tool events do nothing, and the
+# session-start event tells the user how to install it.
+
+if [ -n "$TRUTHSAYER_BIN" ] && [ -x "$TRUTHSAYER_BIN" ]; then
+  exec "$TRUTHSAYER_BIN" hook
+fi
+if command -v truthsayer >/dev/null 2>&1; then
+  exec truthsayer hook
+fi
+if [ -x "$HOME/.cargo/bin/truthsayer" ]; then
+  exec "$HOME/.cargo/bin/truthsayer" hook
+fi
+
+if [ "$1" = "session-start" ]; then
+  printf '%s\n' '{"systemMessage":"truthsayer: the truthsayer binary is not installed, so no checks run. To install it, run: cargo install --locked --git https://github.com/danielhirt/truthsayer truthsayer-cli"}'
+fi
+exit 0

@@ -1,16 +1,19 @@
 [workspace]
 resolver = "2"
-members = ["crates/truthsayer"]
+members = ["crates/truthsayer", "crates/truthsayer-cli"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/danielhirt/truthsayer"
 
 [workspace.dependencies]
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }

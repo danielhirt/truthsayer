@@ -1,7 +1,7 @@
 {
   "name": "model-tier",
   "version": 1,
-  "description": "Pick the model tier the next step deserves from the task and the turn so far. Code maps tiers to model ids.",
+  "description": "Selects the model tier that the next step needs, from the task and the turn. Code maps each tier to a model ID.",
   "state": ["task", "tool", "recent_tools", "assistant_text"],
   "uncertain": [0.3, 0.7],
   "questions": {

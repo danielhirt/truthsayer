@@ -1,7 +1,7 @@
 {
   "name": "turn-end",
   "version": 1,
-  "description": "Read the assistant's closing text: does it claim the task is done, is that claim backed by evidence in the turn, and does it need the user.",
+  "description": "Examines the last text of the assistant. Does it claim that the task is complete? Does evidence in the turn support the claim? Does it need the user?",
   "state": ["task", "assistant_text", "recent_tools"],
   "uncertain": [0.3, 0.7],
   "questions": {

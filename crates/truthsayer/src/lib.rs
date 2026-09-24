@@ -32,6 +32,7 @@ pub mod judge;
 #[cfg(feature = "openrouter")]
 pub mod openrouter;
 pub mod question;
+pub mod redact;
 pub mod rubric;
 pub mod supervisor;
 

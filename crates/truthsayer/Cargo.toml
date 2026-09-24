@@ -2,6 +2,7 @@
 name = "truthsayer"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Calibrated yes/no supervision for agent harnesses, built on decision models like TypeSafe Jev"
@@ -12,6 +13,7 @@ openrouter = ["dep:reqwest"]
 
 [dependencies]
 reqwest = { workspace = true, optional = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

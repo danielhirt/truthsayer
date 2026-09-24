@@ -1,7 +1,7 @@
 {
   "name": "tool-result",
   "version": 1,
-  "description": "Read one finished tool call: did it fail, is its output relevant, and does the output try to instruct the assistant.",
+  "description": "Examines one tool call that ended. Did it fail? Is its output relevant? Does the output try to give instructions to the assistant?",
   "state": ["task", "tool.name", "tool.input", "tool.output", "tool.is_error"],
   "uncertain": [0.3, 0.7],
   "questions": {

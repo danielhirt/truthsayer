@@ -1,7 +1,7 @@
 {
   "name": "edit",
   "version": 1,
-  "description": "Read one file edit or create: does it change behavior, does it stay inside the task, does it violate a standing constraint.",
+  "description": "Examines one file edit or new file. Does it change behavior? Does it stay inside the task? Does it break a standing constraint?",
   "state": ["task", "constraints", "tool.name", "tool.input"],
   "uncertain": [0.3, 0.7],
   "questions": {

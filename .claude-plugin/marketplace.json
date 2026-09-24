@@ -1,0 +1,15 @@
+{
+  "name": "truthsayer",
+  "description": "Calibrated checks for Claude Code sessions.",
+  "owner": {
+    "name": "Daniel Christopher Hirt",
+    "url": "https://github.com/danielhirt"
+  },
+  "plugins": [
+    {
+      "name": "truthsayer",
+      "source": "./plugin",
+      "description": "Checks each tool call and each final message with a calibrated decision model."
+    }
+  ]
+}

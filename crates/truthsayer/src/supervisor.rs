@@ -87,8 +87,13 @@ impl Observation {
         self
     }
 
+    /// The judge's state for this observation, with credential-shaped
+    /// strings replaced (see [`crate::redact`]). This is the only form
+    /// that leaves the process or reaches a sink.
     pub fn to_state(&self) -> State {
-        serde_json::to_value(self).expect("observation serializes")
+        let mut state = serde_json::to_value(self).expect("observation serializes");
+        crate::redact::value(&mut state);
+        state
     }
 }
 
@@ -112,16 +117,32 @@ impl ToolCall {
         if let Some(o) = self.output.take() {
             self.output = Some(cap(&o, OUTPUT_CAP));
         }
+        cap_strings(&mut self.input, OUTPUT_CAP);
         self
     }
 
-    /// A short form for the recent-tools list: name, input, and the
-    /// first line of output.
+    /// A short form for the recent-tools list: name, input, and output,
+    /// each string cut to `DIGEST_CAP` characters.
     fn digest(mut self) -> Self {
         if let Some(o) = self.output.take() {
-            self.output = Some(cap(&o, 200));
+            self.output = Some(cap(&o, DIGEST_CAP));
         }
+        cap_strings(&mut self.input, DIGEST_CAP);
         self
+    }
+}
+
+/// Cap for each string in a recent-tools entry.
+pub const DIGEST_CAP: usize = 200;
+
+/// Cap every string inside a JSON value. Tool input can hold a whole
+/// file (a write), which the judge does not need.
+fn cap_strings(v: &mut Value, max: usize) {
+    match v {
+        Value::String(s) if s.chars().count() > max => *s = cap(s, max),
+        Value::Array(items) => items.iter_mut().for_each(|x| cap_strings(x, max)),
+        Value::Object(map) => map.values_mut().for_each(|x| cap_strings(x, max)),
+        _ => {}
     }
 }
 
@@ -217,6 +238,9 @@ impl Report {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Record {
     pub at_unix_ms: u128,
+    /// Caller-supplied context such as a session id or hook event.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub labels: BTreeMap<String, String>,
     pub judge: String,
     pub rubrics: Vec<String>,
     pub state: State,
@@ -228,7 +252,10 @@ pub trait Sink: Send + Sync {
     fn record(&self, record: &Record);
 }
 
-/// Appends one JSON object per line.
+/// Appends one JSON object per line. Creates the parent directory if
+/// needed and, on Unix, creates the file readable by the owner only,
+/// because records hold tool output. A write failure goes to stderr and
+/// never fails the supervise call.
 pub struct JsonlSink {
     path: std::path::PathBuf,
 }
@@ -237,18 +264,34 @@ impl JsonlSink {
     pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
         Self { path: path.into() }
     }
+
+    fn append(&self, record: &Record) -> std::io::Result<()> {
+        use std::io::Write;
+        if let Some(dir) = self.path.parent()
+            && !dir.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(dir)?;
+        }
+        let mut opts = std::fs::OpenOptions::new();
+        opts.create(true).append(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut line = serde_json::to_string(record)?;
+        line.push('\n');
+        opts.open(&self.path)?.write_all(line.as_bytes())
+    }
 }
 
 impl Sink for JsonlSink {
     fn record(&self, record: &Record) {
-        use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.path)
-            && let Ok(line) = serde_json::to_string(record)
-        {
-            let _ = writeln!(f, "{line}");
+        if let Err(e) = self.append(record) {
+            eprintln!(
+                "truthsayer: cannot write record to {}: {e}",
+                self.path.display()
+            );
         }
     }
 }
@@ -257,6 +300,7 @@ pub struct Supervisor {
     judge: Arc<dyn Judge>,
     rubrics: Vec<Rubric>,
     sinks: Vec<Arc<dyn Sink>>,
+    labels: BTreeMap<String, String>,
 }
 
 impl Supervisor {
@@ -265,7 +309,14 @@ impl Supervisor {
             judge,
             rubrics: Vec::new(),
             sinks: Vec::new(),
+            labels: BTreeMap::new(),
         }
+    }
+
+    /// Attach a label to every record this supervisor writes.
+    pub fn label(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.labels.insert(key.into(), value.into());
+        self
     }
 
     /// Add a rubric. Rubric names must be unique.
@@ -322,6 +373,7 @@ impl Supervisor {
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_millis())
                     .unwrap_or(0),
+                labels: self.labels.clone(),
                 judge: self.judge.name().to_string(),
                 rubrics: chosen.iter().map(|r| r.name.clone()).collect(),
                 state,

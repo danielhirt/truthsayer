@@ -1,7 +1,7 @@
 {
   "name": "progress",
   "version": 1,
-  "description": "Compare the latest tool call with the earlier ones this turn: is the agent repeating itself, and is it getting anywhere.",
+  "description": "Compares the last tool call with the earlier calls in the turn. Does the agent repeat itself? Does it move toward the task?",
   "state": ["task", "tool", "recent_tools"],
   "uncertain": [0.3, 0.7],
   "questions": {
