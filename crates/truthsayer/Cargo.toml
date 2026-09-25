@@ -8,11 +8,12 @@ repository.workspace = true
 description = "Calibrated yes/no supervision for agent harnesses, built on decision models like TypeSafe Jev"
 
 [features]
-default = ["openrouter"]
-openrouter = ["dep:reqwest"]
+default = ["http"]
+http = ["dep:reqwest"]
 
 [dependencies]
 reqwest = { workspace = true, optional = true }
+futures-util = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

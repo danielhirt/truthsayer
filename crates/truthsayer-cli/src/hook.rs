@@ -20,8 +20,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use truthsayer::rubric::builtin;
 use truthsayer::{
-    Action, Finding, JsonlSink, Judge, Observation, OpenRouterJudge, Recommendation, Report,
-    Rubric, Supervisor, ToolCall, redact,
+    Action, Finding, HttpJudge, JsonlSink, Judge, Observation, Recommendation, Report, Rubric,
+    Supervisor, ToolCall, redact,
 };
 
 use crate::config::{Config, Mode};
@@ -295,7 +295,9 @@ pub async fn supervise(
         sup = sup.label("tool", t.clone());
     }
     if let Some(p) = &cfg.record {
-        sup = sup.sink(Arc::new(JsonlSink::new(p.clone())));
+        sup = sup.sink(Arc::new(
+            JsonlSink::new(p.clone()).rotate(cfg.record_max_bytes, cfg.record_keep),
+        ));
     }
     let names: Vec<&str> = plan.rubrics.iter().map(|r| r.name.as_str()).collect();
     match tokio::time::timeout(
@@ -435,21 +437,22 @@ fn hint(rubric: &str, question: &str) -> Option<&'static str> {
 /// Setup problems to show at session start, if any.
 pub fn session_start_problems(cfg: &Config, warnings: &[String]) -> Vec<String> {
     let mut problems: Vec<String> = warnings.to_vec();
-    if cfg.mode != Mode::Off && std::env::var(&cfg.api_key_env).map_or(true, |v| v.is_empty()) {
+    let key_env = cfg.key_env();
+    if cfg.mode != Mode::Off && std::env::var(&key_env).map_or(true, |v| v.is_empty()) {
         problems.push(format!(
-            "{} is not set, so truthsayer skips each check. Set the variable, or set mode = \"off\".",
-            cfg.api_key_env
+            "{key_env} is not set, so truthsayer skips each check. Set TYPESAFE_API_KEY or OPENROUTER_API_KEY, or set mode = \"off\"."
         ));
     }
     problems
 }
 
 pub fn judge_from(cfg: &Config) -> Result<Arc<dyn Judge>, String> {
-    let key = std::env::var(&cfg.api_key_env)
+    let key_env = cfg.key_env();
+    let key = std::env::var(&key_env)
         .ok()
         .filter(|k| !k.is_empty())
-        .ok_or_else(|| format!("{} is not set", cfg.api_key_env))?;
-    let mut judge = OpenRouterJudge::new(key);
+        .ok_or_else(|| format!("{key_env} is not set"))?;
+    let mut judge = HttpJudge::new(cfg.backend(), key);
     if let Some(m) = &cfg.model {
         judge = judge.with_model(m.clone());
     }
@@ -670,7 +673,7 @@ mod tests {
     #[test]
     fn missing_key_is_reported_at_session_start() {
         let mut c = cfg(Mode::Log);
-        c.api_key_env = "TRUTHSAYER_TEST_UNSET_KEY".into();
+        c.api_key_env = Some("TRUTHSAYER_TEST_UNSET_KEY".into());
         let problems = session_start_problems(&c, &[]);
         assert_eq!(problems.len(), 1);
         c.mode = Mode::Off;

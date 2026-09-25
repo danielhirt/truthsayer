@@ -20,6 +20,8 @@ static PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
         // Provider API keys: OpenAI, Anthropic, OpenRouter and similar `sk-` keys.
         r"\bsk-[A-Za-z0-9_\-]{20,}",
+        // TypeSafe API keys.
+        r"\bapikey_[A-Za-z0-9_]{32,}",
         // GitHub tokens.
         r"\bgh[pousr]_[A-Za-z0-9]{30,}",
         r"\bgithub_pat_[A-Za-z0-9_]{30,}",
@@ -125,6 +127,12 @@ mod tests {
         assert!(!r.contains("0123456789abcdef0123"), "{r}");
         assert!(!r.contains("ghp_"), "{r}");
         assert_eq!(r.matches(MASK).count(), 2);
+    }
+
+    #[test]
+    fn masks_typesafe_keys() {
+        let fake = format!("apikey_{}_{}", "0".repeat(34), "f".repeat(64));
+        assert_eq!(text(&format!("key: {fake} end")), "key: [redacted] end");
     }
 
     #[test]

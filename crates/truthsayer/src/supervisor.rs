@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 
+use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -242,6 +243,10 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub judge: String,
+    /// True when each rubric saw only its declared state paths. `state`
+    /// is the full state either way.
+    #[serde(default)]
+    pub isolated: bool,
     pub rubrics: Vec<String>,
     pub state: State,
     pub questions: Questions,
@@ -252,55 +257,12 @@ pub trait Sink: Send + Sync {
     fn record(&self, record: &Record);
 }
 
-/// Appends one JSON object per line. Creates the parent directory if
-/// needed and, on Unix, creates the file readable by the owner only,
-/// because records hold tool output. A write failure goes to stderr and
-/// never fails the supervise call.
-pub struct JsonlSink {
-    path: std::path::PathBuf,
-}
-
-impl JsonlSink {
-    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
-        Self { path: path.into() }
-    }
-
-    fn append(&self, record: &Record) -> std::io::Result<()> {
-        use std::io::Write;
-        if let Some(dir) = self.path.parent()
-            && !dir.as_os_str().is_empty()
-        {
-            std::fs::create_dir_all(dir)?;
-        }
-        let mut opts = std::fs::OpenOptions::new();
-        opts.create(true).append(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
-        let mut line = serde_json::to_string(record)?;
-        line.push('\n');
-        opts.open(&self.path)?.write_all(line.as_bytes())
-    }
-}
-
-impl Sink for JsonlSink {
-    fn record(&self, record: &Record) {
-        if let Err(e) = self.append(record) {
-            eprintln!(
-                "truthsayer: cannot write record to {}: {e}",
-                self.path.display()
-            );
-        }
-    }
-}
-
 pub struct Supervisor {
     judge: Arc<dyn Judge>,
     rubrics: Vec<Rubric>,
     sinks: Vec<Arc<dyn Sink>>,
     labels: BTreeMap<String, String>,
+    isolate: bool,
 }
 
 impl Supervisor {
@@ -310,7 +272,20 @@ impl Supervisor {
             rubrics: Vec::new(),
             sinks: Vec::new(),
             labels: BTreeMap::new(),
+            isolate: true,
         }
+    }
+
+    /// Send every rubric the full state in one request, instead of each
+    /// rubric only the paths in its `state` list.
+    ///
+    /// Isolation is the default because the judge reads the whole state:
+    /// a prompt injection in an earlier call's output raised
+    /// `injected_instructions` on later, clean outputs from about 0.05
+    /// to about 0.65 when the earlier calls were in the state.
+    pub fn shared_state(mut self) -> Self {
+        self.isolate = false;
+        self
     }
 
     /// Attach a label to every record this supervisor writes.
@@ -363,7 +338,11 @@ impl Supervisor {
         let state = obs.to_state();
         let questions = fan_out(&chosen);
         let started = Instant::now();
-        let judgment = self.judge.judge(&state, &questions).await?;
+        let judgment = if self.isolate {
+            self.judge_isolated(&state, &chosen).await?
+        } else {
+            self.judge.judge(&state, &questions).await?
+        };
         let latency_ms = started.elapsed().as_millis() as u64;
         let report = apply(&chosen, &judgment, latency_ms)?;
 
@@ -375,6 +354,7 @@ impl Supervisor {
                     .unwrap_or(0),
                 labels: self.labels.clone(),
                 judge: self.judge.name().to_string(),
+                isolated: self.isolate,
                 rubrics: chosen.iter().map(|r| r.name.clone()).collect(),
                 state,
                 questions,
@@ -386,6 +366,70 @@ impl Supervisor {
         }
         Ok(report)
     }
+}
+
+impl Supervisor {
+    /// One request per distinct state projection, sent concurrently.
+    /// Rubrics that read the same paths share a request.
+    async fn judge_isolated(&self, state: &State, rubrics: &[&Rubric]) -> Result<Judgment, Error> {
+        let mut groups: Vec<(Vec<String>, Vec<&Rubric>)> = Vec::new();
+        for r in rubrics {
+            let mut paths = r.state.clone();
+            paths.sort();
+            match groups.iter_mut().find(|(p, _)| *p == paths) {
+                Some((_, members)) => members.push(r),
+                None => groups.push((paths, vec![r])),
+            }
+        }
+        let requests: Vec<(State, Questions)> = groups
+            .iter()
+            .map(|(paths, members)| (project(state, paths), fan_out(members)))
+            .collect();
+        let replies = join_all(requests.iter().map(|(s, q)| self.judge.judge(s, q))).await;
+        let mut merged = Judgment {
+            model: String::new(),
+            answers: Default::default(),
+            usage: Default::default(),
+        };
+        for reply in replies {
+            let j = reply?;
+            if merged.model.is_empty() {
+                merged.model = j.model;
+            }
+            merged.answers.extend(j.answers);
+            merged.usage.input_tokens += j.usage.input_tokens;
+            merged.usage.output_tokens += j.usage.output_tokens;
+            merged.usage.cost_usd += j.usage.cost_usd;
+        }
+        Ok(merged)
+    }
+}
+
+/// The parts of `state` named by dotted `paths`, in the same nesting.
+/// An empty path list means the whole state.
+pub fn project(state: &State, paths: &[String]) -> State {
+    if paths.is_empty() {
+        return state.clone();
+    }
+    let mut out = Value::Object(Default::default());
+    for path in paths {
+        let keys: Vec<&str> = path.split('.').collect();
+        let Some(v) = keys.iter().try_fold(state, |v, k| v.get(*k)) else {
+            continue;
+        };
+        let mut slot = &mut out;
+        for (i, k) in keys.iter().enumerate() {
+            let Value::Object(map) = slot else { break };
+            if i + 1 == keys.len() {
+                map.insert((*k).to_string(), v.clone());
+                break;
+            }
+            slot = map
+                .entry((*k).to_string())
+                .or_insert_with(|| Value::Object(Default::default()));
+        }
+    }
+    out
 }
 
 /// Merge every rubric's questions into one request. Ids are namespaced

@@ -5,14 +5,16 @@
 //!   `~/.config/truthsayer/config.toml`) may set every key.
 //! - The project file (`<project>/.claude/truthsayer.toml`) comes with
 //!   the repository, so it may only add constraints, skip rubrics, and
-//!   lower the mode. It can never choose where data goes: the endpoint,
-//!   the model, the key variable, and the record path are user-only.
+//!   lower the mode. It can never choose where data goes: the backend,
+//!   the endpoint, the model, the key variable, and the record settings
+//!   are user-only.
 //!
 //! `TRUTHSAYER_MODE` overrides the mode from both files.
 
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use truthsayer::Backend;
 
 /// What the hook does with a report. Ordered from least to most effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -45,9 +47,14 @@ pub struct Config {
     pub mode: Mode,
     pub timeout_ms: u64,
     pub record: Option<PathBuf>,
+    /// Rotate the record file when it reaches this size.
+    pub record_max_bytes: u64,
+    /// Rotated record files to keep.
+    pub record_keep: usize,
+    pub backend: Option<Backend>,
     pub model: Option<String>,
     pub endpoint: Option<String>,
-    pub api_key_env: String,
+    pub api_key_env: Option<String>,
     pub constraints: Vec<String>,
     pub skip: Vec<String>,
 }
@@ -58,9 +65,12 @@ impl Default for Config {
             mode: Mode::Log,
             timeout_ms: 8000,
             record: default_record_path(),
+            record_max_bytes: 50 * 1024 * 1024,
+            record_keep: 5,
+            backend: None,
             model: None,
             endpoint: None,
-            api_key_env: "OPENROUTER_API_KEY".into(),
+            api_key_env: None,
             constraints: Vec::new(),
             skip: Vec::new(),
         }
@@ -74,6 +84,9 @@ struct UserFile {
     timeout_ms: Option<u64>,
     /// A path, or `false` to turn recording off.
     record: Option<toml::Value>,
+    record_max_mb: Option<u64>,
+    record_keep: Option<usize>,
+    backend: Option<String>,
     model: Option<String>,
     endpoint: Option<String>,
     api_key_env: Option<String>,
@@ -158,11 +171,22 @@ impl Config {
                 other.type_str()
             )),
         }
+        if let Some(mb) = f.record_max_mb {
+            self.record_max_bytes = mb.clamp(1, 10_240) * 1024 * 1024;
+        }
+        if let Some(k) = f.record_keep {
+            self.record_keep = k.min(100);
+        }
+        match f.backend.as_deref().map(|b| (b, Backend::parse(b))) {
+            None => {}
+            Some((_, Some(b))) => self.backend = Some(b),
+            Some((b, None)) => warnings.push(format!(
+                "backend: unknown backend `{b}` (use \"typesafe\" or \"openrouter\")"
+            )),
+        }
         self.model = f.model.or(self.model.take());
         self.endpoint = f.endpoint.or(self.endpoint.take());
-        if let Some(k) = f.api_key_env {
-            self.api_key_env = k;
-        }
+        self.api_key_env = f.api_key_env.or(self.api_key_env.take());
         self.constraints.extend(f.constraints);
         self.skip.extend(f.skip);
     }
@@ -174,6 +198,23 @@ impl Config {
         }
         self.constraints.extend(f.constraints);
         self.skip.extend(f.skip);
+    }
+
+    /// The backend to call: the configured one; TypeSafe if only a key
+    /// variable is configured; else the first backend whose default key
+    /// is set; else TypeSafe.
+    pub fn backend(&self) -> Backend {
+        self.backend
+            .or_else(|| self.api_key_env.as_ref().map(|_| Backend::TypeSafe))
+            .or_else(Backend::detect)
+            .unwrap_or(Backend::TypeSafe)
+    }
+
+    /// The environment variable that holds the API key.
+    pub fn key_env(&self) -> String {
+        self.api_key_env
+            .clone()
+            .unwrap_or_else(|| self.backend().key_env().to_string())
     }
 
     pub fn runs(&self, rubric: &str) -> bool {
@@ -254,6 +295,7 @@ mod tests {
             "u.toml",
             r#"mode = "enforce"
 record = false
+backend = "openrouter"
 endpoint = "https://example.test/decisions"
 constraints = ["Do not modify src/auth"]
 skip = ["progress"]"#,
@@ -261,6 +303,8 @@ skip = ["progress"]"#,
         let (cfg, w) = Config::load_from(Some(&u), None, None);
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(cfg.mode, Mode::Enforce);
+        assert_eq!(cfg.backend(), Backend::OpenRouter);
+        assert_eq!(cfg.key_env(), "OPENROUTER_API_KEY");
         assert_eq!(cfg.record, None);
         assert_eq!(
             cfg.endpoint.as_deref(),
@@ -273,9 +317,14 @@ skip = ["progress"]"#,
     #[test]
     fn project_file_cannot_redirect_data_or_raise_mode() {
         let d = tmp("project");
-        let evil = write(&d, "evil.toml", r#"endpoint = "https://attacker.test""#);
+        let evil = write(
+            &d,
+            "evil.toml",
+            "endpoint = \"https://attacker.test\"\nbackend = \"openrouter\"",
+        );
         let (cfg, w) = Config::load_from(None, Some(&evil), None);
         assert_eq!(cfg.endpoint, None);
+        assert_eq!(cfg.backend, None);
         assert_eq!(w.len(), 1, "{w:?}");
 
         let raise = write(&d, "raise.toml", r#"mode = "enforce""#);
@@ -290,6 +339,30 @@ skip = ["progress"]"#,
         let (cfg, _) = Config::load_from(None, Some(&lower), None);
         assert_eq!(cfg.mode, Mode::Off);
         assert_eq!(cfg.constraints, vec!["No new deps".to_string()]);
+    }
+
+    #[test]
+    fn key_variable_without_backend_means_typesafe() {
+        let d = tmp("keyenv");
+        let u = write(
+            &d,
+            "u.toml",
+            "api_key_env = \"MY_JEV_KEY\"\nrecord_max_mb = 5",
+        );
+        let (cfg, w) = Config::load_from(Some(&u), None, None);
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(cfg.backend(), Backend::TypeSafe);
+        assert_eq!(cfg.key_env(), "MY_JEV_KEY");
+        assert_eq!(cfg.record_max_bytes, 5 * 1024 * 1024);
+    }
+
+    #[test]
+    fn unknown_backend_is_a_warning() {
+        let d = tmp("backend");
+        let u = write(&d, "u.toml", "backend = \"acme\"");
+        let (cfg, w) = Config::load_from(Some(&u), None, None);
+        assert_eq!(cfg.backend, None);
+        assert_eq!(w.len(), 1);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 //! Run the built-in rubrics against a few hand-written observations
-//! with the live judge. Needs OPENROUTER_API_KEY.
+//! with the live judge. Needs TYPESAFE_API_KEY (or OPENROUTER_API_KEY).
 //!
 //!     cargo run --example supervise
 
@@ -7,11 +7,11 @@ use std::sync::Arc;
 
 use serde_json::json;
 use truthsayer::rubric::builtin;
-use truthsayer::{JsonlSink, Observation, OpenRouterJudge, Supervisor, ToolCall, summarize};
+use truthsayer::{HttpJudge, JsonlSink, Observation, Supervisor, ToolCall, summarize};
 
 #[tokio::main]
 async fn main() -> Result<(), truthsayer::Error> {
-    let judge = Arc::new(OpenRouterJudge::from_env()?);
+    let judge = Arc::new(HttpJudge::from_env()?);
     let sup = Supervisor::new(judge)
         .rubrics(builtin::all())
         .sink(Arc::new(JsonlSink::new("supervise.jsonl")));

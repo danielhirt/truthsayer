@@ -10,6 +10,8 @@ license = "MIT"
 repository = "https://github.com/danielhirt/truthsayer"
 
 [workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+futures-util = { version = "0.3", default-features = false, features = ["alloc"] }
 regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-case", "unicode-perl"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }

@@ -1,62 +1,233 @@
 //! `truthsayer`: calibrated checks for Claude Code sessions.
-//!
-//! Commands:
-//!
-//! - `truthsayer hook`: the Claude Code hook. Reads one event on stdin.
-//! - `truthsayer doctor`: shows the effective configuration and setup problems.
-//! - `truthsayer rubrics`: lists the built-in rubrics and their questions.
 
 mod config;
 mod hook;
+mod label;
+mod replay;
+mod report;
+mod store;
 mod transcript;
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use clap::{Parser, Subcommand};
 use config::{Config, Mode};
 use hook::{Event, HookInput};
+use truthsayer::records::{open_private_append, rotate_if_needed};
 use truthsayer::rubric::builtin;
 
 /// Set in the environment of the background process that log mode
 /// starts, so that process does the work instead of starting another.
 const DETACHED_ENV: &str = "TRUTHSAYER_DETACHED";
 
-const USAGE: &str = "\
-truthsayer: calibrated checks for Claude Code sessions
+/// `hook.log` rotates at this size; one old file is kept.
+const HOOK_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
 
-Usage:
-  truthsayer hook       Run as a Claude Code hook (reads the event on stdin)
-  truthsayer doctor     Show the configuration and any setup problems
-  truthsayer rubrics    List the built-in rubrics
-  truthsayer --version  Show the version
-";
+#[derive(Parser)]
+#[command(
+    name = "truthsayer",
+    version,
+    about = "Calibrated checks for Claude Code sessions"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Run as a Claude Code hook. Reads one hook event on stdin.
+    Hook,
+    /// Show the configuration and any setup problems.
+    Doctor,
+    /// List the built-in rubrics and their questions.
+    Rubrics,
+    /// Apply the current or edited rubrics to recorded answers. Makes no judge calls.
+    Replay {
+        /// The record file. Default: the record path from the configuration.
+        #[arg(long)]
+        records: Option<PathBuf>,
+        /// A rubric file that replaces the built-in rubric with the same name. Repeatable.
+        #[arg(long = "rubric")]
+        rubrics: Vec<PathBuf>,
+        /// How many changed records to list.
+        #[arg(long, default_value_t = 20)]
+        show: usize,
+    },
+    /// Give the true answer to one question on recorded calls.
+    Label {
+        /// The question, as rubric.question. Example: turn-end.unverified_claim
+        #[arg(long)]
+        question: String,
+        #[arg(long)]
+        records: Option<PathBuf>,
+        /// The most records to label in this session.
+        #[arg(long, default_value_t = 25)]
+        limit: usize,
+        /// Show the judge's answer. Hidden by default so it does not bias you.
+        #[arg(long)]
+        show_answer: bool,
+        /// Also offer records that already have a true answer.
+        #[arg(long)]
+        relabel: bool,
+    },
+    /// Measure labeled questions: calibration, thresholds, and code heuristics.
+    Report {
+        #[arg(long)]
+        records: Option<PathBuf>,
+        /// tune, holdout, or all.
+        #[arg(long, default_value = "all")]
+        split: String,
+        /// Only this question, as rubric.question.
+        #[arg(long)]
+        question: Option<String>,
+        /// A rubric file whose thresholds to mark. Repeatable.
+        #[arg(long = "rubric")]
+        rubrics: Vec<PathBuf>,
+    },
+}
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.first().map(String::as_str) {
-        Some("hook") => {
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Hook => {
             hook_main();
             // A hook never fails the tool call it watches.
             ExitCode::SUCCESS
         }
-        Some("doctor") => doctor(),
-        Some("rubrics") => {
+        Command::Doctor => doctor(),
+        Command::Rubrics => {
             rubrics();
             ExitCode::SUCCESS
         }
-        Some("--version" | "-V") => {
-            println!("truthsayer {}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
+        Command::Replay {
+            records,
+            rubrics,
+            show,
+        } => finish(replay_cmd(records, &rubrics, show)),
+        Command::Label {
+            question,
+            records,
+            limit,
+            show_answer,
+            relabel,
+        } => finish(label_cmd(
+            records,
+            label::Options {
+                question,
+                limit,
+                show_answer,
+                relabel,
+            },
+        )),
+        Command::Report {
+            records,
+            split,
+            question,
+            rubrics,
+        } => finish(report_cmd(records, &split, question.as_deref(), &rubrics)),
+    }
+}
+
+fn finish(r: Result<(), String>) -> ExitCode {
+    match r {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("truthsayer: {e}");
+            ExitCode::from(1)
         }
-        Some("--help" | "-h" | "help") | None => {
-            print!("{USAGE}");
-            ExitCode::SUCCESS
-        }
-        Some(other) => {
-            eprintln!("truthsayer: unknown command `{other}`\n\n{USAGE}");
-            ExitCode::from(2)
-        }
+    }
+}
+
+/// The record file to read: the flag, else the configured path.
+fn records_path(flag: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(p) = flag {
+        return Ok(p);
+    }
+    let cwd = std::env::current_dir().ok();
+    let (cfg, _) = Config::load(cwd.as_deref());
+    cfg.record
+        .ok_or_else(|| "recording is off in the configuration; pass --records".to_string())
+}
+
+fn load(flag: Option<PathBuf>) -> Result<(PathBuf, Vec<store::Loaded>), String> {
+    let path = records_path(flag)?;
+    let (records, bad) = store::load_records(&path);
+    if records.is_empty() {
+        return Err(format!("no records found at {}", path.display()));
+    }
+    if bad > 0 {
+        eprintln!("truthsayer: skipped {bad} lines that are not valid records");
+    }
+    Ok((path, records))
+}
+
+fn replay_cmd(
+    records: Option<PathBuf>,
+    rubric_files: &[PathBuf],
+    show: usize,
+) -> Result<(), String> {
+    let (_, records) = load(records)?;
+    let rubrics = replay::load_rubrics(rubric_files)?;
+    quiet_pipe(replay::run(
+        &records,
+        &rubrics,
+        show,
+        &mut std::io::stdout().lock(),
+    ))
+}
+
+fn label_cmd(records: Option<PathBuf>, opts: label::Options) -> Result<(), String> {
+    let (path, records) = load(records)?;
+    let truth_file = store::truth_path(&path);
+    let truth = store::load_truth(&truth_file);
+    let rubrics = builtin::all();
+    let saved = label::run(
+        &records,
+        &rubrics,
+        &truth,
+        &truth_file,
+        &opts,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout().lock(),
+    )?;
+    println!(
+        "
+saved {saved} answers to {}",
+        truth_file.display()
+    );
+    Ok(())
+}
+
+fn report_cmd(
+    records: Option<PathBuf>,
+    split: &str,
+    question: Option<&str>,
+    rubric_files: &[PathBuf],
+) -> Result<(), String> {
+    let split = store::Split::parse(split)
+        .ok_or_else(|| format!("unknown split `{split}`: use tune, holdout, or all"))?;
+    let (path, records) = load(records)?;
+    let truth = store::load_truth(&store::truth_path(&path));
+    let rubrics = replay::load_rubrics(rubric_files)?;
+    quiet_pipe(report::run(
+        &records,
+        &truth,
+        &rubrics,
+        split,
+        question,
+        &mut std::io::stdout().lock(),
+    ))
+}
+
+/// A closed stdout (for example `truthsayer report | head`) is not an
+/// error worth reporting.
+fn quiet_pipe(r: std::io::Result<()>) -> Result<(), String> {
+    match r {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other.map_err(|e| e.to_string()),
     }
 }
 
@@ -106,9 +277,12 @@ fn hook_main() {
     if cfg.mode == Mode::Off {
         return;
     }
-    // Log mode never changes what Claude does, so the judge call runs
-    // in the background and the tool call does not wait for it.
-    if cfg.mode == Mode::Log && std::env::var_os(DETACHED_ENV).is_none() {
+    // Log mode never changes what Claude does, so a tool event's judge
+    // call runs in the background and the tool call does not wait for
+    // it. Stop runs inline: it happens once per turn, after Claude is
+    // done, and a background call can outlive the session's network
+    // path when the session exits right after the stop.
+    if cfg.mode == Mode::Log && event != Event::Stop && std::env::var_os(DETACHED_ENV).is_none() {
         match detach(&raw, &cfg) {
             Ok(()) => return,
             Err(e) => log(format!(
@@ -145,7 +319,7 @@ fn hook_main() {
     let report = match runtime.block_on(hook::supervise(&plan, judge, &cfg, &input)) {
         Ok(r) => r,
         Err(e) => {
-            log(format!("skipped: {e}"));
+            log(format!("{} skipped: {e}", input.hook_event_name));
             return;
         }
     };
@@ -166,7 +340,11 @@ fn detach(raw: &str, cfg: &Config) -> std::io::Result<()> {
     use std::process::{Command, Stdio};
     let exe = std::env::current_exe()?;
     let stderr = match cfg.record.as_deref().and_then(Path::parent) {
-        Some(dir) => Stdio::from(open_private_append(&dir.join("hook.log"))?),
+        Some(dir) => {
+            let log = dir.join("hook.log");
+            rotate_if_needed(&log, HOOK_LOG_MAX_BYTES, 1)?;
+            Stdio::from(open_private_append(&log)?)
+        }
         None => Stdio::null(),
     };
     let mut cmd = Command::new(exe);
@@ -185,20 +363,6 @@ fn detach(raw: &str, cfg: &Config) -> std::io::Result<()> {
         stdin.write_all(raw.as_bytes())?;
     }
     Ok(())
-}
-
-fn open_private_append(path: &Path) -> std::io::Result<std::fs::File> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let mut opts = std::fs::OpenOptions::new();
-    opts.create(true).append(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
-    opts.open(path)
 }
 
 fn doctor() -> ExitCode {
@@ -224,17 +388,17 @@ fn doctor() -> ExitCode {
     );
     println!("mode:           {:?}", cfg.mode);
     println!("record:         {}", show(cfg.record.as_deref()));
+    let backend = cfg.backend();
+    println!("backend:        {backend:?} (key in {})", cfg.key_env());
     println!(
         "model:          {}",
-        cfg.model
-            .as_deref()
-            .unwrap_or(truthsayer::openrouter::DEFAULT_MODEL)
+        cfg.model.as_deref().unwrap_or(backend.default_model())
     );
     println!(
         "endpoint:       {}",
         cfg.endpoint
             .as_deref()
-            .unwrap_or(truthsayer::openrouter::DEFAULT_ENDPOINT)
+            .unwrap_or(backend.default_endpoint())
     );
     println!("timeout:        {} ms", cfg.timeout_ms);
     println!("constraints:    {}", cfg.constraints.len());

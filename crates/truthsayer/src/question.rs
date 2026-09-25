@@ -1,5 +1,5 @@
 //! Question and answer types. These mirror the decision-model contract
-//! (TypeSafe's System One API as exposed by OpenRouter's Decisions
+//! (TypeSafe's System One API, also exposed by OpenRouter's Decisions
 //! router): three question types, one answer per question, every answer
 //! constrained to the question's schema and carrying a probability.
 
