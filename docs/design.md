@@ -41,8 +41,9 @@ These properties agree with the problem:
 
 ```text
 Observation  --to_state()-->  State (JSON, secrets redacted)
-Rubrics      --fan_out()-->   Questions (one map, IDs in the form rubric.question)
-Judge.judge(State, Questions) -> Judgment (one answer for each question, and usage)
+State        --project()-->   one State for each rubric: only the paths in its `state` list
+Rubrics      --fan_out()-->   Questions (one map for each projection, IDs in the form rubric.question)
+Judge.judge(State, Questions) -> Judgment (one answer for each question, and usage; requests run at the same time)
 apply(Rubrics, Judgment)      -> Report (verdicts, findings, recommendation)
 ```
 
@@ -50,11 +51,17 @@ These are the parts:
 
 - **Observation.** The harness's short description of the situation. It contains the task, the constraints, and the tool call that ended. It also contains the earlier calls in the turn and the assistant's last text. truthsayer shortens large outputs and keeps the start and the end. Other data goes in `extra`.
 - **Rubric.** A named set of questions and rules, in a JSON file. Questions refer to the state with a path in backticks, for example `` `tool.output` ``. Rules tell what to do when an answer crosses a threshold. For the format, see [Rubrics](rubrics.md).
-- **Judge.** A trait for a component that answers questions about a state. `OpenRouterJudge` calls the live model. `MockJudge` returns scripted answers for tests. A rubric does not know which judge answers it. Thus, you can change the decision model without a change to a rubric.
-- **Supervisor.** Contains a judge, a set of rubrics, and zero or more sinks. The `supervise` method sends the questions of all rubrics in one call. The `supervise_with` method sends the questions of the named rubrics only. The supervisor applies the rules and returns a report.
+- **Judge.** A trait for a component that answers questions about a state. `HttpJudge` calls the live model through the TypeSafe API or through OpenRouter. `MockJudge` returns scripted answers for tests. A rubric does not know which judge answers it. Thus, you can change the decision model without a change to a rubric.
+- **Supervisor.** Contains a judge, a set of rubrics, and zero or more sinks. The `supervise` method asks the questions of all rubrics. The `supervise_with` method asks the questions of the named rubrics only. Each rubric receives only its declared state paths. Rubrics with the same paths share one request. The supervisor applies the rules and returns a report.
 - **Report.** Contains a recommendation, the findings, and each verdict. The recommendation is the most severe action that a rule gave: proceed, warn, escalate, or halt. The verdicts contain the raw probabilities, so a harness can apply its own rules.
-- **Sink.** Receives the full exchange after each call: the state, the questions, the report, the latency, and the cost. `JsonlSink` adds each exchange to a file as one line. Use these records to adjust the thresholds.
+- **Sink.** Receives the full exchange after each call: the state, the questions, the report, the latency, and the cost. `JsonlSink` adds each exchange to a file as one line and can rotate the file by size. Use these records to adjust the thresholds.
 - **Redaction.** `Observation::to_state` replaces common secret formats before the state goes to the judge or to a sink. The Claude Code hook also removes the contents of secret files.
+
+## Why each rubric sees only its own paths
+
+The judge reads the whole state, not only the path that a question names. In a live session, a file that contained a prompt injection went into `recent_tools`. After that, three clean tool outputs got `injected_instructions` values of 0.61 to 0.69. The same three states, with only the paths of the `tool-result` rubric, got 0.02 to 0.07.
+
+Thus, the `state` list of a rubric controls what the judge receives. Rubrics that read different paths go in different requests. The requests run at the same time, so the latency does not increase. The cost increases a little because some state goes in more than one request. To send one request with the full state, call `Supervisor::shared_state`.
 
 ## What the rules do
 
@@ -88,7 +95,7 @@ There are three reasons:
 ## Roadmap
 
 1. Collect records from real Claude Code sessions in `log` mode.
-2. Add a `replay` command. This command applies changed rules to the answers in the records, with no new judge calls. Then add a labeling step and a measurement of precision and recall for each question.
-3. Adjust the thresholds from labeled records. Add rubrics for the problems that real sessions show.
-4. Add a judge that calls the TypeSafe API directly, and a judge that uses log probabilities from a local model.
+2. Label the records, and tune the thresholds with `report` and `replay`. For the process, see [Tune the thresholds](tuning.md). Add rubrics for the problems that real sessions show.
+3. Stop the questions that a code heuristic answers as well as the judge.
+4. Add a judge that uses log probabilities from a local model.
 5. Publish TypeScript and Python SDKs that read the same rubric files.

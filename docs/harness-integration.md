@@ -66,12 +66,13 @@ These rules apply to each harness:
 - **Do not fail the tool call.** If the judge fails or does not reply before the timeout, continue as if no finding exists. Record the error.
 - **Start with records only.** Run the supervisor without effect for some time. Read the records before you let a finding stop a turn.
 - **Limit the continuations.** If a finding can make the model continue, permit only one continuation for each stop.
-- **Treat project files as untrusted.** A file in the repository can add constraints or turn checks off. It must not change the endpoint, the model, or the record location.
+- **Treat project files as untrusted.** A file in the repository can add constraints or turn checks off. It must not change the backend, the endpoint, the model, or the record location.
+- **Keep the state small.** The judge reads the whole state that it receives. List only the necessary paths in the `state` field of each rubric.
 - **Redact before you send.** `Observation::to_state` redacts common secret formats. Also remove data that you know is secret.
 
 ## Cost and latency
 
-Each call costs approximately $0.00003 and takes 300 to 1000 ms. A turn with 40 tool calls costs approximately one cent and adds less than one minute.
+A tool-end check costs approximately $0.00005. On an open connection, a request to the TypeSafe API took 140 to 250 ms in the author's tests. The Claude Code hook starts a new process and a new TLS connection for each event, so each check took 500 to 650 ms. A turn with 40 tool calls costs approximately 0.2 cents.
 
 To hide the latency, run `supervise` at the same time as the next model call. Wait for the result only before the next tool call starts.
 

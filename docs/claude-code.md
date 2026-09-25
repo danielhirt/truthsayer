@@ -48,7 +48,9 @@ At a stop, truthsayer asks Claude to continue only when the stop is not already 
 
 The default mode is `log`. In `log` mode, the hook starts a background process for the judge call and exits immediately. Thus, `log` mode does not make tool calls slower.
 
-In `advise` and `enforce` modes, each checked event waits for the judge. One judge call usually takes 300 to 1000 ms.
+In `advise` and `enforce` modes, each checked event waits for the judge. In the author's tests, a check from the hook took 500 to 650 ms, including a new TLS connection.
+
+In `log` mode, the `Stop` check runs before the hook exits, not in the background. It runs one time for each turn, after Claude stops. A background check can lose its network connection if the session ends immediately after the stop.
 
 Only findings with the action `warn`, `escalate`, or `halt` have an effect. truthsayer writes findings with the action `note` to the record only.
 
@@ -72,9 +74,12 @@ The `TRUTHSAYER_MODE` environment variable overrides the mode in both files.
 | `skip` | `[]` | Names of rubrics that truthsayer does not run, for example `["progress"]`. |
 | `record` | `~/.local/state/truthsayer/records.jsonl` | The record file. Set `false` to stop records. |
 | `timeout_ms` | `8000` | The maximum time for one judge call, in milliseconds. The permitted range is 500 to 60000. |
-| `api_key_env` | `"OPENROUTER_API_KEY"` | The name of the environment variable that contains the API key. |
-| `model` | `"~typesafe/jev-latest"` | The decision model. |
-| `endpoint` | OpenRouter's decisions endpoint | The URL that receives each judge call. |
+| `backend` | See the description | `typesafe` or `openrouter`. If you do not set it, truthsayer uses TypeSafe when `TYPESAFE_API_KEY` has a value, else OpenRouter when `OPENROUTER_API_KEY` has a value. |
+| `api_key_env` | `TYPESAFE_API_KEY` or `OPENROUTER_API_KEY`, for the backend | The name of the environment variable that contains the API key. If you set this key and not `backend`, the backend is TypeSafe. |
+| `model` | `"jev-latest"` for TypeSafe, `"~typesafe/jev-latest"` for OpenRouter | The decision model. An alias such as `jev-latest` moves to each new model. After you tune the thresholds, set a versioned ID such as `"jev-1.13.0"`. |
+| `endpoint` | The API endpoint of the backend | The URL that receives each judge call. |
+| `record_max_mb` | `50` | The size in MB at which truthsayer rotates the record file. |
+| `record_keep` | `5` | The number of rotated record files to keep. |
 
 If you set `XDG_STATE_HOME`, the default record file is `$XDG_STATE_HOME/truthsayer/records.jsonl`.
 
@@ -88,7 +93,7 @@ A project file comes with the repository. Thus, the person who wrote the reposit
 | `constraints` | Adds rules to the rules from the user file. |
 | `skip` | Adds rubrics to the list of rubrics that truthsayer does not run. |
 
-A project file cannot set `endpoint`, `model`, `api_key_env`, `record`, or `timeout_ms`. These keys control where your data goes. If a project file contains one of these keys, truthsayer ignores the complete project file. The next `SessionStart` hook and `truthsayer doctor` then show the problem.
+A project file cannot set `backend`, `endpoint`, `model`, `api_key_env`, `timeout_ms`, or the record keys. These keys control where your data goes. If a project file contains one of these keys, truthsayer ignores the complete project file. The next `SessionStart` hook and `truthsayer doctor` then show the problem.
 
 Example project file:
 
@@ -120,20 +125,23 @@ In all modes except `off`, truthsayer adds one JSON line to the record file for 
 | `labels` | The session ID, the hook event, the mode, and the tool name. |
 | `judge` | The model that answered. |
 | `rubrics` | The rubrics in the call. |
-| `state` | The data that truthsayer sent to the judge, after redaction. |
+| `state` | The full state, after redaction. Each rubric received only the paths in its `state` list. |
+| `isolated` | `true` if each rubric received only its own paths. |
 | `questions` | The questions that truthsayer sent. |
 | `report` | Each answer, the findings, the recommendation, the latency, and the cost. |
 
-Use the records to make sure that the thresholds are correct for your work. For example, find each `unverified_claim` finding and compare it with what really happened in that session.
+Use the records to make sure that the thresholds are correct for your work. For the process and the commands, see [Tune the thresholds](tuning.md).
+
+truthsayer rotates the record file at 50 MB and keeps five old files. `hook.log` rotates at 5 MB, and truthsayer keeps one old file.
 
 On Unix, truthsayer creates the record file and `hook.log` with permission `0600`. Only your user can read them.
 
 ## Data and privacy
 
 > [!IMPORTANT]
-> Each judge call sends data to the endpoint in your configuration. By default, this endpoint is OpenRouter, and OpenRouter sends the request to TypeSafe.
+> Each judge call sends data to the endpoint of your backend. With the `typesafe` backend, the data goes to TypeSafe only. With the `openrouter` backend, the data goes to OpenRouter, and OpenRouter sends it to TypeSafe.
 
-A judge call contains these items:
+Each rubric receives only the state paths in its `state` list. Together, the calls for one event can contain these items:
 
 - Your prompt for the current turn, to a maximum of 2000 characters.
 - Your constraints.

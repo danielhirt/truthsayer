@@ -41,7 +41,7 @@ This example shows the three question types and two rules:
 
 | Field | Description |
 | --- | --- |
-| `state` | The observation paths that the questions refer to. This field is for documentation. A harness can also use it to make sure that it supplies these paths. |
+| `state` | The observation paths that the questions refer to. The supervisor sends the judge only these paths. If the list is empty, the judge receives the full state. |
 | `uncertain` | A noul that is strictly inside this band has the label `uncertain`, not `yes` or `no`. The default band is 0.3 to 0.7. |
 | `questions` | Questions with an ID that you select. In requests and reports, the ID has the form `rubric.question`. |
 | `rules` | The supervisor applies the rules in sequence. Each rule whose condition is true gives a finding. The recommendation of the report is the most severe action of all findings. |
@@ -54,7 +54,7 @@ This example shows the three question types and two rules:
 | `choice` | Required. A map from each option to its description. | `choice`, `probabilities` for each option, and `confidence`. |
 | `score` | Required. A list of two or more level descriptions, from lowest to highest. | `score`: the expected level. Also `probabilities` for each level, and `confidence`. |
 
-All instructions and criteria are plain strings. The OpenRouter adapter does not accept structured values.
+All instructions and criteria are plain strings. The TypeSafe API also accepts structured values, but the OpenRouter adapter does not. Plain strings work with both backends.
 
 ### Rule conditions
 
@@ -108,8 +108,4 @@ To see how the live judge answers, run `cargo run --example supervise` and read 
 
 Attach a `JsonlSink`. For each call, the sink records the state, the questions, each answer, the findings, the latency, and the cost.
 
-To adjust a threshold, do these steps:
-
-1. Find the records that contain the question.
-2. Compare the values with what really happened in those sessions.
-3. Change the number in the rubric JSON file. You do not need to change code.
+To label the records, measure each question, and replay a changed rule, use the commands in [Tune the thresholds](tuning.md). You do not need to change code to change a threshold.
