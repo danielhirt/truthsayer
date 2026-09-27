@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
-    <img src="assets/banner-light.svg" width="100%" alt="truthsayer. The model scores. Code decides. A plot of 180 labeled eval cases on a scale from 0 to 1: cases whose true answer is no gather near 0, cases whose true answer is yes gather near 1, and few fall in the uncertain band between 0.3 and 0.7.">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/header-dark.svg">
+    <img src="assets/header-light.svg" width="100%" alt="truthsayer. The model scores. Code decides.">
   </picture>
 </p>
 
@@ -175,6 +175,11 @@ Read these results with care:
 - **The cases are synthetic.** The results show what the judge can do. They do not show how accurate the judge is on real sessions.
 - **A model wrote the cases.** A person has not yet reviewed the labels. Each case has a rationale, so you can check its label.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="evals/runs/2026-09-26-jev/plot-dark.svg">
+  <img src="evals/runs/2026-09-26-jev/plot-light.svg" width="100%" alt="A plot of the 180 synthetic cases on a scale from 0 to 1, at the judge's mean P(yes). Cases whose true answer is no gather near 0, and cases whose true answer is yes gather near 1. Some no cases fall in the uncertain band between 0.3 and 0.7, and a few cases are on the wrong side of the 0.7 rule threshold.">
+</picture>
+
 For the method, the strata, and all cases that the judge got wrong, see [Synthetic evals](evals/README.md) and the [run summary](evals/runs/2026-09-26-jev/summary.md).
 
 ## Status
@@ -192,7 +197,7 @@ crates/truthsayer-cli/  the truthsayer binary and the Claude Code hook
 plugin/                 the Claude Code plugin
 docs/                   design, rubric format, and integration guides
 evals/                  labeled synthetic cases and eval results
-assets/                 the README banner and the script that draws it
+assets/                 the README header and the scripts that draw the README images
 ```
 
 ## Documentation
@@ -221,7 +226,7 @@ CI runs on each push to `main` and on each pull request. The [latest runs](https
 
 The synthetic evals call the live judge, so CI does not run them. To run them, see [Synthetic evals](evals/README.md).
 
-To draw the banner again from a new eval run, run `uv run assets/make_banner.py evals/runs/<run>`. The script needs the Geist font and `rsvg-convert`.
+The `assets/` scripts draw the images in this README. `uv run assets/make_header.py` draws the header and the social preview. `uv run assets/make_eval_plot.py evals/runs/<run>` draws the plot of an eval run into its directory. The scripts need the Geist font and `rsvg-convert`.
 
 ### Build on macOS
 

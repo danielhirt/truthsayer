@@ -2,33 +2,25 @@
 # requires-python = ">=3.11"
 # dependencies = ["fonttools>=4.50", "uharfbuzz>=0.39"]
 # ///
-"""Draw the README banner from an eval run.
+"""Draw the plot of an eval run.
 
 Each dot is one labeled case, placed at the judge's mean P(yes) across
 repeats. Filled dots are cases whose true answer is yes; rings are cases
 whose true answer is no. Text is converted to paths, so the SVG needs no
 font on the viewer's side.
 
-    uv run assets/make_banner.py evals/runs/2026-09-26-jev
+    uv run assets/make_eval_plot.py evals/runs/2026-09-26-jev
 
-Writes assets/banner-light.svg, assets/banner-dark.svg, and
-assets/social-preview.png (the last needs rsvg-convert).
+Writes plot-light.svg and plot-dark.svg into the run directory.
 """
 
 import json
 import math
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
-import uharfbuzz as hb
-from fontTools.pens.svgPathPen import SVGPathPen
-from fontTools.pens.transformPen import TransformPen
-from fontTools.ttLib import TTFont
-
-FONT_DIR = Path("/usr/share/fonts/OTF")
-FONTS = {w: FONT_DIR / f"Geist-{w}.otf" for w in ("Regular", "Medium", "SemiBold")}
+from glyphs import FONTS, Face
 
 W, H = 1280, 400
 LEFT, RIGHT = 72, 1208
@@ -58,41 +50,6 @@ THEMES = {
         "no": "#d95926",
     },
 }
-
-
-class Face:
-    def __init__(self, path: Path):
-        self.tt = TTFont(path)
-        self.glyphs = self.tt.getGlyphSet()
-        self.order = self.tt.getGlyphOrder()
-        self.upem = self.tt["head"].unitsPerEm
-        blob = hb.Blob.from_file_path(str(path))
-        self.hb_font = hb.Font(hb.Face(blob))
-
-    def shape(self, text: str):
-        buf = hb.Buffer()
-        buf.add_str(text)
-        buf.guess_segment_properties()
-        hb.shape(self.hb_font, buf, {"kern": True, "liga": True})
-        return buf.glyph_infos, buf.glyph_positions
-
-    def width(self, text: str, size: float, tracking: float = 0.0) -> float:
-        _, pos = self.shape(text)
-        scale = size / self.upem
-        return sum(p.x_advance * scale + tracking for p in pos) - tracking
-
-    def path(self, text: str, x: float, y: float, size: float, tracking: float = 0.0) -> str:
-        """SVG path data for `text` with its baseline at y."""
-        infos, pos = self.shape(text)
-        scale = size / self.upem
-        pen = SVGPathPen(self.glyphs)
-        cx = x
-        for info, p in zip(infos, pos):
-            name = self.order[info.codepoint]
-            t = TransformPen(pen, (scale, 0, 0, -scale, cx + p.x_offset * scale, y - p.y_offset * scale))
-            self.glyphs[name].draw(t)
-            cx += p.x_advance * scale + tracking
-        return pen.getCommands()
 
 
 def load_points(run: Path):
@@ -151,14 +108,14 @@ def swarm(points, nudge: float = 10.0):
     return out
 
 
-def svg(theme: dict, dots, faces) -> str:
+def svg(theme: dict, dots, faces, meta: dict) -> str:
     reg, med, semi = faces["Regular"], faces["Medium"], faces["SemiBold"]
     t = theme
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" '
         f'aria-labelledby="t d">',
-        "<title id=\"t\">truthsayer</title>",
-        '<desc id="d">The model scores. Code decides. Each dot is one labeled eval case, placed at the '
+        "<title id=\"t\">Judge answers on the synthetic eval cases</title>",
+        '<desc id="d">Each dot is one labeled eval case, placed at the '
         "judge's probability that the answer is yes. Filled dots are true yes cases and rings are true no "
         "cases; they gather at opposite ends, and few fall in the uncertain band between 0.3 and 0.7.</desc>",
     ]
@@ -172,8 +129,8 @@ def svg(theme: dict, dots, faces) -> str:
 
     # Wordmark and line.
     mid = (x_of(0.3) + x_of(0.7)) / 2
-    text(semi, "truthsayer", mid, 112, 76, t["ink"], tracking=-2.2, anchor="middle")
-    text(reg, "The model scores. Code decides.", mid, 156, 25, t["muted"], tracking=-0.1, anchor="middle")
+    text(semi, "Where the judge puts each case", mid, 104, 40, t["ink"], tracking=-0.8, anchor="middle")
+    text(reg, f'{meta["cases"]} labeled synthetic cases, the mean of {meta["repeat"]} answers each, {meta["model"]}', mid, 146, 22, t["muted"], anchor="middle")
 
     # Uncertain band and the rule threshold.
     x3, x7 = x_of(0.3), x_of(0.7)
@@ -210,7 +167,7 @@ def svg(theme: dict, dots, faces) -> str:
 
     # Legend row under the axis, centered.
     ly = BASE + 70
-    items = [("no", "true answer no"), ("yes", "true answer yes"), (None, "180 labeled cases at the judge's P(yes), jev-1.13.0")]
+    items = [("no", "true answer no"), ("yes", "true answer yes"), (None, "x: the judge's P(yes)")]
     widths = [reg.width(s, 18) + (12 + R if kind else 0) for kind, s in items]
     x = mid - (sum(widths) + 28 * (len(items) - 1)) / 2
     for (kind, s), w in zip(items, widths):
@@ -228,23 +185,12 @@ def svg(theme: dict, dots, faces) -> str:
 def main():
     run = Path(sys.argv[1] if len(sys.argv) > 1 else "evals/runs/2026-09-26-jev")
     faces = {w: Face(p) for w, p in FONTS.items()}
+    meta = json.loads((run / "run.json").read_text())
     dots = swarm(load_points(run))
     top = min(y for _, y, _ in dots)
     print(f"{len(dots)} dots, tallest stack reaches y={top:.0f}")
-    out = Path("assets")
     for name, theme in THEMES.items():
-        (out / f"banner-{name}.svg").write_text(svg(theme, dots, faces))
-    # GitHub's social preview wants 1280x640 on a solid surface.
-    light = (out / "banner-light.svg").read_text()
-    framed = light.replace(
-        f'width="{W}" height="{H}" viewBox="0 0 {W} {H}"',
-        f'width="1280" height="640" viewBox="0 -120 {W} 640"',
-    ).replace('aria-labelledby="t d">', 'aria-labelledby="t d"><rect x="0" y="-120" width="1280" height="640" fill="#ffffff"/>', 1)
-    tmp = out / ".social.svg"
-    tmp.write_text(framed)
-    subprocess.run(["rsvg-convert", "-o", str(out / "social-preview.png"), str(tmp)], check=True)
-    tmp.unlink()
-
+        (run / f"plot-{name}.svg").write_text(svg(theme, dots, faces, meta))
 
 if __name__ == "__main__":
     main()

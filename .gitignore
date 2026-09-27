@@ -3,3 +3,4 @@ target/
 node_modules/
 .venv/
 !evals/**/*.jsonl
+__pycache__/

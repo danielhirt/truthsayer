@@ -36,6 +36,8 @@ The command writes four files to the output directory:
 | `run.json` | The judge model, the case-set hash, the number of calls, the errors, and the cost |
 | `summary.md` | Results by question and stratum, the cases that the judge got wrong, and the answers that changed between repeats |
 
+To draw a plot of a run, run `uv run assets/make_eval_plot.py <run directory>`. The script writes `plot-light.svg` and `plot-dark.svg` into the run directory.
+
 Because the files have the same format as a real session, `report` and `replay` work on them:
 
 ```sh
