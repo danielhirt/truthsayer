@@ -181,12 +181,12 @@ def svg(theme: dict, dots, faces) -> str:
         f'<rect x="{x3:.1f}" y="212" width="{x7 - x3:.1f}" height="{BASE - 212}" '
         f'fill="{t["band"]}" fill-opacity="{t["band_opacity"]}"/>'
     )
-    text(med, "uncertain", (x3 + x7) / 2, 238, 15, t["muted"], anchor="middle")
+    text(med, "uncertain", (x3 + x7) / 2, 240, 18, t["muted"], anchor="middle")
     parts.append(
         f'<line x1="{x7:.1f}" y1="212" x2="{x7:.1f}" y2="{BASE}" stroke="{t["muted"]}" '
         f'stroke-width="1.5" stroke-dasharray="3 4"/>'
     )
-    text(med, "rules act at 0.7", x7 + 10, 238, 15, t["muted"])
+    text(med, "rules act at 0.7", x7 + 10, 240, 18, t["muted"])
 
     # Axis.
     parts.append(
@@ -195,7 +195,7 @@ def svg(theme: dict, dots, faces) -> str:
     for p, label in ((0, "0"), (0.3, "0.3"), (0.7, "0.7"), (1, "1")):
         x = x_of(p)
         parts.append(f'<line x1="{x:.1f}" y1="{BASE}" x2="{x:.1f}" y2="{BASE + 7}" stroke="{t["axis"]}" stroke-width="1.5"/>')
-        text(reg, label, x, BASE + 27, 14, t["muted"], anchor="middle")
+        text(reg, label, x, BASE + 30, 18, t["muted"], anchor="middle")
 
     # Dots: no cases first, so yes cases sit on top where they meet.
     for x, y, truth in sorted(dots, key=lambda d: d[2]):
@@ -209,16 +209,16 @@ def svg(theme: dict, dots, faces) -> str:
             )
 
     # Legend row under the axis, centered.
-    ly = BASE + 64
-    items = [("no", "true answer no"), ("yes", "true answer yes"), (None, "180 labeled eval cases, placed at the judge's P(yes), jev-1.13.0")]
-    widths = [reg.width(s, 15) + (12 + R if kind else 0) for kind, s in items]
+    ly = BASE + 70
+    items = [("no", "true answer no"), ("yes", "true answer yes"), (None, "180 labeled cases at the judge's P(yes), jev-1.13.0")]
+    widths = [reg.width(s, 18) + (12 + R if kind else 0) for kind, s in items]
     x = mid - (sum(widths) + 28 * (len(items) - 1)) / 2
     for (kind, s), w in zip(items, widths):
         if kind == "no":
-            parts.append(f'<circle cx="{x + R:.1f}" cy="{ly - 5}" r="{R - 0.9:.1f}" fill="{t["surface"]}" stroke="{t["no"]}" stroke-width="1.8"/>')
+            parts.append(f'<circle cx="{x + R:.1f}" cy="{ly - 6}" r="{R - 0.9:.1f}" fill="{t["surface"]}" stroke="{t["no"]}" stroke-width="1.8"/>')
         elif kind == "yes":
-            parts.append(f'<circle cx="{x + R:.1f}" cy="{ly - 5}" r="{R}" fill="{t["yes"]}"/>')
-        text(reg, s, x + (12 + R if kind else 0), ly, 15, t["muted"])
+            parts.append(f'<circle cx="{x + R:.1f}" cy="{ly - 6}" r="{R}" fill="{t["yes"]}"/>')
+        text(reg, s, x + (12 + R if kind else 0), ly, 18, t["muted"])
         x += w + 28
 
     parts.append("</svg>")
