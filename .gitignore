@@ -2,3 +2,4 @@ target/
 *.jsonl
 node_modules/
 .venv/
+!evals/**/*.jsonl

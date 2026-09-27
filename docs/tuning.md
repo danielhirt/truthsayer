@@ -87,3 +87,13 @@ To measure the changed thresholds, add the same `--rubric` option to `report`.
 truthsayer rotates the record file when it reaches 50 MB and keeps five old files. The three commands read the current file and all rotated files. To change these limits, set `record_max_mb` and `record_keep` in the user file.
 
 By default, the commands read the record file from your configuration. To read a different file, add `--records PATH`.
+
+## Test a rubric change on the synthetic cases
+
+The `evals/synthetic` directory holds labeled cases for the three deciding questions. To see how a changed rubric does on them before you use it, run:
+
+```sh
+truthsayer eval evals/synthetic --rubric my-turn-end.json --out /tmp/eval-my-turn-end
+```
+
+This command makes judge calls. Do not select thresholds from the synthetic cases, because the cases are made to cause errors. For more information, see [Synthetic evals](../evals/README.md).

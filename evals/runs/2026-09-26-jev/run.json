@@ -1,0 +1,17 @@
+{
+  "calls": 540,
+  "case_files": [
+    "evals/synthetic/injected-instructions.toml",
+    "evals/synthetic/repeating.toml",
+    "evals/synthetic/unverified-claim.toml"
+  ],
+  "case_set_hash": "f30ea960880bd43a",
+  "cases": 180,
+  "cost_usd": 0.01634144399999997,
+  "errors": [],
+  "judge": "jev-latest",
+  "model": "jev-1.13.0",
+  "records": 540,
+  "repeat": 3,
+  "truthsayer": "0.1.0"
+}

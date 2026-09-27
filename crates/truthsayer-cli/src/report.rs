@@ -139,7 +139,7 @@ pub fn heuristic(question: &str, state: &Value) -> Option<bool> {
 }
 
 /// The `at_least` thresholds the current rubric rules use for a question.
-fn rule_thresholds(rubrics: &[Rubric], key: &str) -> Vec<f64> {
+pub(crate) fn rule_thresholds(rubrics: &[Rubric], key: &str) -> Vec<f64> {
     let (rubric, question) = key.split_once('.').unwrap_or((key, ""));
     rubrics
         .iter()

@@ -1,6 +1,7 @@
 //! `truthsayer`: calibrated checks for Claude Code sessions.
 
 mod config;
+mod eval;
 mod hook;
 mod label;
 mod replay;
@@ -87,6 +88,30 @@ enum Command {
         #[arg(long = "rubric")]
         rubrics: Vec<PathBuf>,
     },
+    /// Run a labeled case set through the judge and score it against the code heuristics.
+    Eval {
+        /// Case files (TOML), or directories of them.
+        #[arg(required = true)]
+        cases: Vec<PathBuf>,
+        /// The directory for records.jsonl, truth.jsonl, run.json, and summary.md. It must not hold records yet.
+        #[arg(long, required_unless_present = "dry_run")]
+        out: Option<PathBuf>,
+        /// How many times to ask about each case.
+        #[arg(long, default_value_t = 1)]
+        repeat: usize,
+        /// How many judge calls to have in flight.
+        #[arg(long, default_value_t = 4)]
+        concurrency: usize,
+        /// The judge model. Default: the model from the configuration.
+        #[arg(long)]
+        model: Option<String>,
+        /// A rubric file that replaces the built-in rubric with the same name. Repeatable.
+        #[arg(long = "rubric")]
+        rubrics: Vec<PathBuf>,
+        /// Check the cases and print the state each rubric will see. Makes no judge calls.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -128,6 +153,23 @@ fn main() -> ExitCode {
             question,
             rubrics,
         } => finish(report_cmd(records, &split, question.as_deref(), &rubrics)),
+        Command::Eval {
+            cases,
+            out,
+            repeat,
+            concurrency,
+            model,
+            rubrics,
+            dry_run,
+        } => finish(eval_cmd(
+            &cases,
+            out,
+            repeat,
+            concurrency,
+            model,
+            &rubrics,
+            dry_run,
+        )),
     }
 }
 
@@ -220,6 +262,57 @@ fn report_cmd(
         question,
         &mut std::io::stdout().lock(),
     ))
+}
+
+fn eval_cmd(
+    paths: &[PathBuf],
+    out: Option<PathBuf>,
+    repeat: usize,
+    concurrency: usize,
+    model: Option<String>,
+    rubric_files: &[PathBuf],
+    dry_run: bool,
+) -> Result<(), String> {
+    let files = eval::expand(paths)?;
+    let rubrics = replay::load_rubrics(rubric_files)?;
+    let cases = eval::load_cases(&files, &rubrics)?;
+    if dry_run {
+        let mut stdout = std::io::stdout().lock();
+        for c in &cases {
+            quiet_pipe(eval::describe(c, &rubrics, &mut stdout))?;
+        }
+        println!("{} cases are valid", cases.len());
+        return Ok(());
+    }
+    let cwd = std::env::current_dir().ok();
+    let (mut cfg, _) = Config::load(cwd.as_deref());
+    if model.is_some() {
+        cfg.model = model;
+    }
+    let judge = hook::judge_from(&cfg)?;
+    let opts = eval::Options {
+        out: out.ok_or("--out is required")?,
+        repeat: repeat.max(1),
+        concurrency,
+    };
+    eprintln!(
+        "truthsayer: {} cases x {} repeats = {} judge calls",
+        cases.len(),
+        opts.repeat,
+        cases.len() * opts.repeat
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let text = runtime.block_on(eval::run(&cases, &rubrics, judge, &files, &opts))?;
+    print!("{text}");
+    eprintln!(
+        "truthsayer: wrote {}; measure it with `truthsayer report --records {}`",
+        opts.out.display(),
+        opts.out.join("records.jsonl").display()
+    );
+    Ok(())
 }
 
 /// A closed stdout (for example `truthsayer report | head`) is not an

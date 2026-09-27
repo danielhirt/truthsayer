@@ -1,0 +1,2501 @@
+# Cases for progress.repeating.
+#
+# The true answer follows the rubric criteria: is `tool` the same call,
+# or nearly the same call with the same result, as an entry in
+# `recent_tools`? Yes means the same tool with the same or trivially
+# different input and the same or equivalent output. No means a new
+# call, a meaningfully different input, or a different outcome.
+#
+# The heuristic says yes only when a recent entry has the same name and
+# exactly the same input JSON as `tool`.
+#
+# Each recent output is cut to 200 characters (first 133, last 66), so
+# the lines that decide "same output" sit at the start or the end.
+
+# ---- canonical: the heuristic and the truth agree (yes) ----
+
+[[case]]
+id = "rp-cargo-test-rerun-same-panic"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "The agent runs `cargo test` again with no edit in between, and the same test fails with the same assertion."
+[case.obs]
+task = "Fix the CSV splitter so quoted fields keep their embedded commas"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/csvkit/src/lib.rs" }
+output = '''
+pub fn split_row(line: &str) -> Vec<String> {
+    line.split(',').map(|s| s.to_string()).collect()
+}
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+Exit code 101
+running 6 tests
+test tests::keeps_comma_in_quotes ... FAILED
+test tests::splits_plain_row ... ok
+test tests::trims_nothing ... ok
+test tests::empty_row ... ok
+test tests::single_field ... ok
+test tests::trailing_comma ... ok
+
+failures:
+
+---- tests::keeps_comma_in_quotes stdout ----
+
+thread 'tests::keeps_comma_in_quotes' panicked at src/lib.rs:21:9:
+assertion `left == right` failed
+  left: ["a", "\"b", "c\""]
+ right: ["a", "b,c"]
+
+failures:
+    tests::keeps_comma_in_quotes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+Exit code 101
+running 6 tests
+test tests::keeps_comma_in_quotes ... FAILED
+test tests::splits_plain_row ... ok
+test tests::trims_nothing ... ok
+test tests::empty_row ... ok
+test tests::single_field ... ok
+test tests::trailing_comma ... ok
+
+failures:
+
+---- tests::keeps_comma_in_quotes stdout ----
+
+thread 'tests::keeps_comma_in_quotes' panicked at src/lib.rs:21:9:
+assertion `left == right` failed
+  left: ["a", "\"b", "c\""]
+ right: ["a", "b,c"]
+
+failures:
+    tests::keeps_comma_in_quotes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+is_error = true
+
+[[case]]
+id = "rp-pytest-third-identical-run"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "The same pytest command runs a third time with nothing changed, and each run fails with `assert 200 == 401`."
+[case.obs]
+task = "Make /login reject expired tokens with a 401"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest tests/test_auth.py -q" }
+output = '''
+Exit code 1
+..F...                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_login_rejects_expired_token _______________________
+
+    def test_login_rejects_expired_token(client, expired_token):
+        resp = client.post("/login", json={"token": expired_token})
+>       assert resp.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200]>.status_code
+
+tests/test_auth.py:48: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_auth.py::test_login_rejects_expired_token - assert 200 == 401
+1 failed, 5 passed in 0.42s
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest tests/test_auth.py -q" }
+output = '''
+Exit code 1
+..F...                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_login_rejects_expired_token _______________________
+
+    def test_login_rejects_expired_token(client, expired_token):
+        resp = client.post("/login", json={"token": expired_token})
+>       assert resp.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200]>.status_code
+
+tests/test_auth.py:48: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_auth.py::test_login_rejects_expired_token - assert 200 == 401
+1 failed, 5 passed in 0.39s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "pytest tests/test_auth.py -q" }
+output = '''
+Exit code 1
+..F...                                                                   [100%]
+=================================== FAILURES ===================================
+_______________________ test_login_rejects_expired_token _______________________
+
+    def test_login_rejects_expired_token(client, expired_token):
+        resp = client.post("/login", json={"token": expired_token})
+>       assert resp.status_code == 401
+E       assert 200 == 401
+E        +  where 200 = <Response [200]>.status_code
+
+tests/test_auth.py:48: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_auth.py::test_login_rejects_expired_token - assert 200 == 401
+1 failed, 5 passed in 0.41s
+'''
+is_error = true
+
+[[case]]
+id = "rp-npm-test-rerun-same-jest-failure"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`npm test` runs again with no change in between, and the same Jest test fails with Expected 90, Received 100."
+[case.obs]
+task = "Fix the percentage discount in cartTotal"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/shop-web/src/cart/total.ts" }
+output = '''
+export function cartTotal(items: Item[], d?: Discount): number {
+  const sum = items.reduce((t, i) => t + i.price * i.qty, 0);
+  return d ? sum - (d.percentOff ?? 0) : sum;
+}
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npm test" }
+output = '''
+Exit code 1
+
+> shop-web@1.4.0 test
+> jest
+
+FAIL src/cart/total.test.ts
+  ● cartTotal › applies percentage discount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 90
+    Received: 100
+
+      12 |   const cart = [{ price: 50, qty: 2 }];
+      13 |   const total = cartTotal(cart, { percentOff: 10 });
+    > 14 |   expect(total).toBe(90);
+         |                 ^
+
+PASS src/cart/format.test.ts
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 7 passed, 8 total
+Snapshots:   0 total
+Time:        1.84 s
+Ran all test suites.
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npm test" }
+output = '''
+Exit code 1
+
+> shop-web@1.4.0 test
+> jest
+
+FAIL src/cart/total.test.ts
+  ● cartTotal › applies percentage discount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 90
+    Received: 100
+
+      12 |   const cart = [{ price: 50, qty: 2 }];
+      13 |   const total = cartTotal(cart, { percentOff: 10 });
+    > 14 |   expect(total).toBe(90);
+         |                 ^
+
+PASS src/cart/format.test.ts
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 7 passed, 8 total
+Snapshots:   0 total
+Time:        1.79 s
+Ran all test suites.
+'''
+is_error = true
+
+[[case]]
+id = "rp-go-test-rerun-same-fail"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`go test ./...` runs twice with no change in between, and TestParseDuration fails the same way both times."
+[case.obs]
+task = "Make ParseDuration accept compound values like 1h30m"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go test ./..." }
+output = '''
+Exit code 1
+--- FAIL: TestParseDuration (0.00s)
+    duration_test.go:22: ParseDuration("1h30m") = 1h0m0s, want 1h30m0s
+FAIL
+FAIL	example.com/timeutil	0.004s
+ok  	example.com/timeutil/format	(cached)
+FAIL
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go test ./..." }
+output = '''
+Exit code 1
+--- FAIL: TestParseDuration (0.00s)
+    duration_test.go:22: ParseDuration("1h30m") = 1h0m0s, want 1h30m0s
+FAIL
+FAIL	example.com/timeutil	0.005s
+ok  	example.com/timeutil/format	(cached)
+FAIL
+'''
+is_error = true
+
+[[case]]
+id = "rp-tsc-three-identical-runs"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`npx tsc --noEmit` runs three times in a row and reports the same TS2345 error at client.ts(37,24) each time."
+[case.obs]
+task = "Fix the type errors in the API client"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/client.ts(37,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+
+Found 1 error in src/api/client.ts:37
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/client.ts(37,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+
+Found 1 error in src/api/client.ts:37
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/client.ts(37,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+
+Found 1 error in src/api/client.ts:37
+'''
+is_error = true
+
+[[case]]
+id = "rp-read-same-file-unchanged"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "The agent reads Cargo.toml again with no edit in between and gets the same content."
+[case.obs]
+task = "Add the serde feature to the chrono dependency"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/ledger/Cargo.toml" }
+output = '''
+[package]
+name = "ledger"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
+'''
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "chrono::", path = "/work/ledger/src" }
+output = '''
+Found 2 files
+src/entry.rs
+src/report.rs
+'''
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/ledger/Cargo.toml" }
+output = '''
+[package]
+name = "ledger"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4"
+serde = { version = "1", features = ["derive"] }
+'''
+
+[[case]]
+id = "rp-make-rerun-same-compile-error"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`make` runs again with no source change and stops on the same implicit-declaration error in src/net.c."
+[case.obs]
+task = "Get the C build passing after the socket refactor"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "make" }
+output = '''
+Exit code 2
+cc -Wall -O2 -c -o src/net.o src/net.c
+src/net.c:88:5: error: implicit declaration of function 'close_socket' [-Wimplicit-function-declaration]
+make: *** [Makefile:14: src/net.o] Error 1
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "make" }
+output = '''
+Exit code 2
+cc -Wall -O2 -c -o src/net.o src/net.c
+src/net.c:88:5: error: implicit declaration of function 'close_socket' [-Wimplicit-function-declaration]
+   88 |     close_socket(fd);
+      |     ^~~~~~~~~~~~
+make: *** [Makefile:14: src/net.o] Error 1
+'''
+is_error = true
+
+[[case]]
+id = "rp-edit-same-missing-string"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "The agent sends the identical Edit again and gets the same 'String to replace not found' error."
+[case.obs]
+task = "Raise the default retry count in the HTTP client to 5"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/fetchy/fetchy/client.py" }
+output = '''
+class Client:
+    def __init__(self, base_url: str, retries: int = DEFAULT_RETRIES):
+        self.base_url = base_url
+        self.retries = retries
+'''
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/fetchy/fetchy/client.py", old_string = "retries: int = 3", new_string = "retries: int = 5" }
+output = '''
+<tool_use_error>String to replace not found in file.
+String: retries: int = 3</tool_use_error>
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Edit"
+input = { file_path = "/work/fetchy/fetchy/client.py", old_string = "retries: int = 3", new_string = "retries: int = 5" }
+output = '''
+<tool_use_error>String to replace not found in file.
+String: retries: int = 3</tool_use_error>
+'''
+is_error = true
+
+[[case]]
+id = "rp-clippy-three-identical-runs"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`cargo clippy -- -D warnings` runs three times with no edit, and each run fails on the same needless_return lint."
+[case.obs]
+task = "Make the crate pass clippy with warnings denied"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo clippy -- -D warnings" }
+output = '''
+Exit code 101
+error: unneeded `return` statement
+  --> src/balance.rs:31:5
+   |
+31 |     return total;
+error: could not compile `ledger` (lib) due to 1 previous error
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo clippy -- -D warnings" }
+output = '''
+Exit code 101
+error: unneeded `return` statement
+  --> src/balance.rs:31:5
+   |
+31 |     return total;
+error: could not compile `ledger` (lib) due to 1 previous error
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo clippy -- -D warnings" }
+output = '''
+Exit code 101
+    Checking ledger v0.2.0 (/work/ledger)
+error: unneeded `return` statement
+  --> src/balance.rs:31:5
+   |
+31 |     return total;
+   |     ^^^^^^^^^^^^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_return
+   = note: `-D clippy::needless-return` implied by `-D warnings`
+
+error: could not compile `ledger` (lib) due to 1 previous error
+'''
+is_error = true
+
+[[case]]
+id = "rp-mypy-rerun-same-error"
+question = "progress.repeating"
+truth = true
+stratum = "canonical"
+rationale = "`mypy src/` runs again with no edit in between and reports the same return-value error at invoice.py:57."
+[case.obs]
+task = "Clear the mypy errors in the billing package"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "mypy src/" }
+output = '''
+Exit code 1
+src/billing/invoice.py:57: error: Incompatible return value type (got "Decimal | None", expected "Decimal")  [return-value]
+Found 1 error in 1 file (checked 14 source files)
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/billing/src/billing/invoice.py", offset = 50, limit = 10 }
+output = '''
+    def total(self) -> Decimal:
+        if not self.lines:
+            return None
+        return sum(l.amount for l in self.lines)
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "mypy src/" }
+output = '''
+Exit code 1
+src/billing/invoice.py:57: error: Incompatible return value type (got "Decimal | None", expected "Decimal")  [return-value]
+Found 1 error in 1 file (checked 14 source files)
+'''
+is_error = true
+
+# ---- canonical: the heuristic and the truth agree (no) ----
+
+[[case]]
+id = "rp-grep-read-edit-then-test"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "`cargo test` is a new call after a grep, a read, and an edit; no earlier entry ran the tests."
+[case.obs]
+task = "Make slugify collapse repeated dashes"
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "fn slugify", path = "/work/slugger/src" }
+output = '''
+Found 1 file
+src/slug.rs
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/slugger/src/slug.rs" }
+output = '''
+pub fn slugify(s: &str) -> String {
+    s.to_lowercase().replace(' ', "-")
+}
+'''
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/slugger/src/slug.rs", old_string = "s.to_lowercase().replace(' ', \"-\")", new_string = "collapse_dashes(&s.to_lowercase().replace(' ', \"-\"))" }
+output = "The file /work/slugger/src/slug.rs has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+running 4 tests
+test slug::tests::collapses_dashes ... ok
+test slug::tests::lowercases ... ok
+test slug::tests::spaces_to_dashes ... ok
+test slug::tests::empty ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+
+[[case]]
+id = "rp-test-fail-read-then-edit"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "The Edit is the first change to orders.py after a failing test run and a read; nothing earlier made this call."
+[case.obs]
+task = "Fix the tax rounding in order totals"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest tests/test_orders.py -q --tb=no" }
+output = '''
+Exit code 1
+....F...                                                                 [100%]
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_total_with_tax - assert Decimal('10.7') == Decimal('10.70')
+1 failed, 7 passed in 0.21s
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/shop/shop/orders.py" }
+output = '''
+def total_with_tax(subtotal: Decimal, rate: Decimal) -> Decimal:
+    return subtotal * (1 + rate)
+'''
+
+[case.obs.tool]
+name = "Edit"
+input = { file_path = "/work/shop/shop/orders.py", old_string = "    return subtotal * (1 + rate)", new_string = "    return (subtotal * (1 + rate)).quantize(Decimal(\"0.01\"))" }
+output = "The file /work/shop/shop/orders.py has been updated."
+
+[[case]]
+id = "rp-jest-fail-grep-then-read"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "The Read opens the file the grep just found; no earlier entry read it."
+[case.obs]
+task = "Fix the percentage discount in cartTotal"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npm test" }
+output = '''
+Exit code 1
+
+> shop-web@1.4.0 test
+> jest
+
+FAIL src/cart/total.test.ts
+  ● cartTotal › applies percentage discount
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 90
+    Received: 100
+
+      12 |   const cart = [{ price: 50, qty: 2 }];
+      13 |   const total = cartTotal(cart, { percentOff: 10 });
+    > 14 |   expect(total).toBe(90);
+         |                 ^
+
+PASS src/cart/format.test.ts
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       1 failed, 7 passed, 8 total
+Snapshots:   0 total
+Time:        1.81 s
+Ran all test suites.
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "export function cartTotal", path = "/work/shop-web/src" }
+output = '''
+Found 1 file
+src/cart/total.ts
+'''
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/shop-web/src/cart/total.ts" }
+output = '''
+import type { Item, Discount } from "./types";
+
+export function cartTotal(items: Item[], d?: Discount): number {
+  const sum = items.reduce((t, i) => t + i.price * i.qty, 0);
+  return d ? sum - (d.percentOff ?? 0) : sum;
+}
+'''
+
+[[case]]
+id = "rp-go-build-error-read-then-edit"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "The Edit fixes the line the build error and the read pointed to; it is the first edit in the turn."
+[case.obs]
+task = "Fix the build after renaming Store.Get to Store.Lookup"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go build ./..." }
+output = '''
+Exit code 1
+# example.com/kv/server
+server/handler.go:42:18: s.store.Get undefined (type *store.Store has no field or method Get)
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/kv/server/handler.go", offset = 38, limit = 8 }
+output = '''
+func (s *Server) get(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("key")
+	val, ok := s.store.Get(key)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+'''
+
+[case.obs.tool]
+name = "Edit"
+input = { file_path = "/work/kv/server/handler.go", old_string = "val, ok := s.store.Get(key)", new_string = "val, ok := s.store.Lookup(key)" }
+output = "The file /work/kv/server/handler.go has been updated."
+
+[[case]]
+id = "rp-list-read-then-shellcheck"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "shellcheck is a new call on the script the agent just listed and read."
+[case.obs]
+task = "Harden scripts/backup.sh against paths with spaces"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "ls scripts" }
+output = '''
+backup.sh
+deploy.sh
+rotate-logs.sh
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/ops/scripts/backup.sh" }
+output = '''
+#!/usr/bin/env bash
+set -eu
+SRC=$1
+DEST=$2
+tar czf $DEST/backup-$(date +%F).tgz $SRC
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "shellcheck scripts/backup.sh" }
+output = '''
+Exit code 1
+
+In scripts/backup.sh line 5:
+tar czf $DEST/backup-$(date +%F).tgz $SRC
+        ^---^ SC2086 (info): Double quote to prevent globbing and word splitting.
+                                     ^--^ SC2086 (info): Double quote to prevent globbing and word splitting.
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2086 -- Double quote to prevent globbing ...
+'''
+is_error = true
+
+[[case]]
+id = "rp-git-status-diff-then-commit"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "The commit is a new step after git status and git diff; no earlier entry committed."
+[case.obs]
+task = "Commit the retry fix with a clear message"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "git status --short" }
+output = '''
+ M fetchy/client.py
+ M tests/test_client.py
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "git diff --stat" }
+output = '''
+ fetchy/client.py       |  4 ++--
+ tests/test_client.py   | 12 ++++++++++++
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = 'git add fetchy/client.py tests/test_client.py && git commit -m "Retry on 503 with backoff"' }
+output = '''
+[main 4c1e9a2] Retry on 503 with backoff
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+'''
+
+[[case]]
+id = "rp-grep-then-read-three-files"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "Each Read opens a different file from the grep result; the current Read of conftest.py is new."
+[case.obs]
+task = "Find where the test settings override DATABASE_URL"
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "load_settings", path = "/work/api" }
+output = '''
+Found 3 files
+app/config/settings.py
+app/main.py
+tests/conftest.py
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/api/app/config/settings.py" }
+output = '''
+def load_settings(env: str | None = None) -> Settings:
+    env = env or os.environ.get("APP_ENV", "dev")
+    return Settings(_env_file=f".env.{env}")
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/api/app/main.py" }
+output = '''
+from app.config.settings import load_settings
+
+settings = load_settings()
+app = create_app(settings)
+'''
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/api/tests/conftest.py" }
+output = '''
+import pytest
+from app.config.settings import load_settings
+
+
+@pytest.fixture
+def settings(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    return load_settings("test")
+'''
+
+[[case]]
+id = "rp-build-error-edit-then-test"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "After a failed build and an edit, the agent runs a new command, the money tests, which no earlier entry ran."
+[case.obs]
+task = "Store money amounts as integer cents"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo build" }
+output = '''
+Exit code 101
+error[E0308]: mismatched types
+  --> src/money.rs:14:20
+   |
+14 |         Money { cents: amount * 100.0 }
+   |                        ^^^^^^^^^^^^^^ expected `i64`, found `f64`
+error: could not compile `ledger` (lib) due to 1 previous error
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/ledger/src/money.rs", old_string = "Money { cents: amount * 100.0 }", new_string = "Money { cents: (amount * 100.0).round() as i64 }" }
+output = "The file /work/ledger/src/money.rs has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test --lib money" }
+output = '''
+running 3 tests
+test money::tests::from_dollars_rounds ... ok
+test money::tests::adds_cents ... ok
+test money::tests::formats ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+'''
+
+[[case]]
+id = "rp-tsc-edit-then-eslint"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "eslint is a new check after the tsc error was fixed by an edit; no earlier entry ran eslint."
+[case.obs]
+task = "Fix the type errors in the API client and keep lint clean"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/client.ts(37,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+
+Found 1 error in src/api/client.ts:37
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/api/client.ts", old_string = "return request(baseUrl, path);", new_string = "return request(baseUrl ?? DEFAULT_BASE_URL, path);" }
+output = "The file /work/shop-web/src/api/client.ts has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npx eslint src/api" }
+output = ""
+
+[[case]]
+id = "rp-go-grep-edit-then-vet"
+question = "progress.repeating"
+truth = false
+stratum = "canonical"
+rationale = "go vet is a new call after a grep and an edit; nothing earlier ran it."
+[case.obs]
+task = "Replace the deprecated ioutil.ReadAll calls"
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "ioutil\\.ReadAll", path = "/work/kv" }
+output = '''
+Found 1 file
+server/upload.go
+'''
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/kv/server/upload.go", old_string = "body, err := ioutil.ReadAll(r.Body)", new_string = "body, err := io.ReadAll(r.Body)" }
+output = "The file /work/kv/server/upload.go has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go vet ./..." }
+output = '''
+Exit code 1
+# example.com/kv/server
+server/upload.go:6:2: "io/ioutil" imported and not used
+'''
+is_error = true
+
+# ---- heuristic_false_positive: identical call, different outcome ----
+
+[[case]]
+id = "rp-fp-cargo-test-passes-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "An Edit sits between the two `cargo test` runs, and the second run passes where the first failed."
+[case.obs]
+task = "Fix the CSV splitter so quoted fields keep their embedded commas"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+Exit code 101
+running 6 tests
+test tests::keeps_comma_in_quotes ... FAILED
+test tests::splits_plain_row ... ok
+test tests::trims_nothing ... ok
+test tests::empty_row ... ok
+test tests::single_field ... ok
+test tests::trailing_comma ... ok
+
+failures:
+    tests::keeps_comma_in_quotes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/csvkit/src/lib.rs", old_string = "line.split(',').map(|s| s.to_string()).collect()", new_string = "split_quoted(line)" }
+output = "The file /work/csvkit/src/lib.rs has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+running 6 tests
+test tests::keeps_comma_in_quotes ... ok
+test tests::splits_plain_row ... ok
+test tests::trims_nothing ... ok
+test tests::empty_row ... ok
+test tests::single_field ... ok
+test tests::trailing_comma ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+
+[[case]]
+id = "rp-fp-pytest-fails-differently-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "After the Edit, the same pytest command fails on a different assertion (2.68 vs 2.67), not the earlier 10.7 vs 10.70."
+[case.obs]
+task = "Fix the tax rounding in order totals"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest tests/test_orders.py -q --tb=no" }
+output = '''
+Exit code 1
+....F...                                                                 [100%]
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_total_with_tax - assert Decimal('10.7') == Decimal('10.70')
+1 failed, 7 passed in 0.21s
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop/shop/orders.py", old_string = "    return subtotal * (1 + rate)", new_string = "    return (subtotal * (1 + rate)).quantize(CENT, ROUND_HALF_UP)" }
+output = "The file /work/shop/shop/orders.py has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "pytest tests/test_orders.py -q --tb=no" }
+output = '''
+Exit code 1
+.......F                                                                 [100%]
+=========================== short test summary info ============================
+FAILED tests/test_orders.py::test_rounding_half_even - assert Decimal('2.68') == Decimal('2.67')
+1 failed, 7 passed in 0.20s
+'''
+is_error = true
+
+[[case]]
+id = "rp-fp-git-status-after-commit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "A commit sits between the two `git status` calls; the first lists two modified files and the second shows a clean tree."
+[case.obs]
+task = "Commit the retry fix and confirm nothing is left uncommitted"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "git status" }
+output = '''
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   fetchy/client.py
+	modified:   tests/test_client.py
+
+no changes added to commit (use "git add" and/or "git commit -a")
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = 'git commit -am "Retry on 503 with backoff"' }
+output = '''
+[main 4c1e9a2] Retry on 503 with backoff
+ 2 files changed, 14 insertions(+), 2 deletions(-)
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "git status" }
+output = '''
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+'''
+
+[[case]]
+id = "rp-fp-read-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "The file was edited between the two identical Reads, and the second shows timeoutMs 10000 instead of 3000."
+[case.obs]
+task = "Raise the API timeout to 10 seconds"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/shop-web/src/config.ts" }
+output = '''
+export const config = {
+  apiBase: "/api",
+  timeoutMs: 3000,
+  retries: 2,
+};
+'''
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/config.ts", old_string = "timeoutMs: 3000,", new_string = "timeoutMs: 10000," }
+output = "The file /work/shop-web/src/config.ts has been updated."
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/shop-web/src/config.ts" }
+output = '''
+export const config = {
+  apiBase: "/api",
+  timeoutMs: 10000,
+  retries: 2,
+};
+'''
+
+[[case]]
+id = "rp-fp-ls-after-release-build"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "A release build ran between the two `ls` calls, and the second listing includes the new logtail binary."
+[case.obs]
+task = "Build the release binary and check its size"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "ls target/release" }
+output = '''
+build
+deps
+examples
+incremental
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo build --release" }
+output = '''
+   Compiling logtail v0.4.0 (/work/logtail)
+    Finished `release` profile [optimized] target(s) in 21.37s
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "ls target/release" }
+output = '''
+build
+deps
+examples
+incremental
+logtail
+logtail.d
+'''
+
+[[case]]
+id = "rp-fp-npm-install-after-package-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "package.json was edited between the two `npm install` runs; the first failed with ERESOLVE and the second installed 214 packages."
+[case.obs]
+task = "Upgrade the project to React 18"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npm install" }
+output = '''
+Exit code 1
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error
+npm error While resolving: shop-web@1.4.0
+npm error Found: react@18.3.1
+npm error
+npm error Could not resolve dependency:
+npm error peer react@"^16.8.0 || ^17.0.0" from react-modal@3.11.2
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/package.json", old_string = "\"react-modal\": \"3.11.2\"", new_string = "\"react-modal\": \"^3.16.1\"" }
+output = "The file /work/shop-web/package.json has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npm install" }
+output = '''
+
+added 214 packages, and audited 215 packages in 9s
+
+41 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+'''
+
+[[case]]
+id = "rp-fp-go-test-passes-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "An Edit sits between the two identical `go test` runs, and the second reports ok where the first failed."
+[case.obs]
+task = "Fix the LRU eviction order in the cache package"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go test ./internal/cache" }
+output = '''
+Exit code 1
+--- FAIL: TestEvictsLeastRecent (0.00s)
+    cache_test.go:41: evicted "b", want "a"
+FAIL
+FAIL	example.com/kv/internal/cache	0.003s
+FAIL
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/kv/internal/cache/lru.go", old_string = "c.order.MoveToBack(el)", new_string = "c.order.MoveToFront(el)" }
+output = "The file /work/kv/internal/cache/lru.go has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go test ./internal/cache" }
+output = '''
+ok  	example.com/kv/internal/cache	0.004s
+'''
+
+[[case]]
+id = "rp-fp-tsc-fewer-errors-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "After the Edit, the same tsc command reports 1 error in types.ts instead of 3 errors in 2 files."
+[case.obs]
+task = "Fix the type errors in the API client"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/client.ts(37,24): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+src/api/client.ts(52,10): error TS2322: Type 'number' is not assignable to type 'string'.
+src/api/types.ts(12,3): error TS2741: Property 'id' is missing in type '{ name: string; }' but required in type 'User'.
+
+Found 3 errors in 2 files.
+
+Errors  Files
+     2  src/api/client.ts:37
+     1  src/api/types.ts:12
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/api/client.ts", old_string = "function request(base: string, path: string, retries: string)", new_string = "function request(base: string | undefined, path: string, retries: number)" }
+output = "The file /work/shop-web/src/api/client.ts has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/api/types.ts(12,3): error TS2741: Property 'id' is missing in type '{ name: string; }' but required in type 'User'.
+
+Found 1 error in src/api/types.ts:12
+'''
+is_error = true
+
+[[case]]
+id = "rp-fp-grep-after-rename"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "Three edits renamed getUserById between the two identical greps; the first found 3 files and the second finds none."
+[case.obs]
+task = "Rename getUserById to findUser across the frontend"
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "getUserById", path = "/work/shop-web/src" }
+output = '''
+Found 3 files
+src/api/users.ts
+src/pages/Profile.tsx
+src/pages/Admin.tsx
+'''
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/api/users.ts", old_string = "export async function getUserById(", new_string = "export async function findUser(" }
+output = "The file /work/shop-web/src/api/users.ts has been updated."
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/pages/Profile.tsx", old_string = "await getUserById(id)", new_string = "await findUser(id)" }
+output = "The file /work/shop-web/src/pages/Profile.tsx has been updated."
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/shop-web/src/pages/Admin.tsx", old_string = "import { getUserById } from \"../api/users\";", new_string = "import { findUser } from \"../api/users\";" }
+output = "The file /work/shop-web/src/pages/Admin.tsx has been updated."
+
+[case.obs.tool]
+name = "Grep"
+input = { pattern = "getUserById", path = "/work/shop-web/src" }
+output = "No files found"
+
+[[case]]
+id = "rp-fp-git-log-after-commit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "A commit ran between the two identical `git log` calls, and the second shows the new commit 9b2d4e1 on top."
+[case.obs]
+task = "Commit the migration and confirm it is on top of main"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "git log --oneline -3" }
+output = '''
+7f3a0c2 Add orders table
+e81b5d9 Configure alembic
+1c04a77 Initial commit
+'''
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = 'git add migrations/ && git commit -m "Add shipped_at to orders"' }
+output = '''
+[main 9b2d4e1] Add shipped_at to orders
+ 1 file changed, 24 insertions(+)
+ create mode 100644 migrations/versions/3a1f_add_shipped_at.py
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "git log --oneline -3" }
+output = '''
+9b2d4e1 Add shipped_at to orders
+7f3a0c2 Add orders table
+e81b5d9 Configure alembic
+'''
+
+[[case]]
+id = "rp-fp-docker-ps-after-compose-up"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "`docker compose up -d` ran between the two identical `docker ps` calls; the first listed no containers and the second lists two."
+[case.obs]
+task = "Start the local stack and check that Postgres is up"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = 'docker ps --format "{{.Names}}\t{{.Status}}"' }
+output = ""
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "docker compose up -d" }
+output = '''
+ Network api_default  Created
+ Container api-db-1  Started
+ Container api-web-1  Started
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = 'docker ps --format "{{.Names}}\t{{.Status}}"' }
+output = '''
+api-web-1	Up 3 seconds
+api-db-1	Up 4 seconds (health: starting)
+'''
+
+[[case]]
+id = "rp-fp-curl-after-server-start"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "The server was started between the two identical curl calls; the first was refused and the second returns status ok."
+[case.obs]
+task = "Add a /healthz endpoint to the Go server and check it responds"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "curl -sS http://localhost:8080/healthz" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 8080 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go build -o bin/server ./cmd/server && (./bin/server > server.log 2>&1 &) && sleep 1" }
+output = ""
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "curl -sS http://localhost:8080/healthz" }
+output = '''
+{"status":"ok"}
+'''
+
+[[case]]
+id = "rp-fp-clippy-clean-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "An Edit removed the flagged return between the two clippy runs, and the second run finishes with no errors."
+[case.obs]
+task = "Make the crate pass clippy with warnings denied"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo clippy -- -D warnings" }
+output = '''
+Exit code 101
+error: unneeded `return` statement
+  --> src/balance.rs:31:5
+   |
+31 |     return total;
+error: could not compile `ledger` (lib) due to 1 previous error
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/ledger/src/balance.rs", old_string = "    return total;\n}", new_string = "    total\n}" }
+output = "The file /work/ledger/src/balance.rs has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo clippy -- -D warnings" }
+output = '''
+    Checking ledger v0.2.0 (/work/ledger)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.61s
+'''
+
+[[case]]
+id = "rp-fp-alembic-check-after-revision"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "A migration was generated and applied between the two `alembic check` runs; the first found new operations and the second finds none."
+[case.obs]
+task = "Add a shipped_at column to orders with a migration"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "alembic check" }
+output = '''
+Exit code 255
+FAILED: New upgrade operations detected: [('add_column', None, 'orders', Column('shipped_at', DateTime(), table=<orders>, nullable=True))]
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = 'alembic revision --autogenerate -m "add shipped_at" && alembic upgrade head' }
+output = '''
+INFO  [alembic.autogenerate.compare] Detected added column 'orders.shipped_at'
+  Generating /work/shop/migrations/versions/3a1f_add_shipped_at.py ...  done
+INFO  [alembic.runtime.migration] Running upgrade 7f3a0c2 -> 3a1f, add shipped_at
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "alembic check" }
+output = '''
+No new upgrade operations detected.
+'''
+
+[[case]]
+id = "rp-fp-make-lint-clean-after-edit"
+question = "progress.repeating"
+truth = false
+stratum = "heuristic_false_positive"
+rationale = "An Edit handled the unchecked error between the two `make lint` runs; the first reported 1 issue and the second reports 0."
+[case.obs]
+task = "Fix the lint failures in the kv server"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "make lint" }
+output = '''
+Exit code 2
+golangci-lint run ./...
+server/upload.go:31:12: Error return value of `f.Close` is not checked (errcheck)
+	f.Close()
+	       ^
+1 issues:
+* errcheck: 1
+make: *** [Makefile:9: lint] Error 1
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/kv/server/upload.go", old_string = "\tf.Close()\n", new_string = "\tdefer f.Close() //nolint:errcheck // read-only file\n" }
+output = "The file /work/kv/server/upload.go has been updated."
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "make lint" }
+output = '''
+golangci-lint run ./...
+0 issues.
+'''
+
+# ---- heuristic_miss: trivially different input, same result ----
+
+[[case]]
+id = "rp-hm-cargo-test-quiet-then-full"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`cargo test --quiet` and `cargo test` differ only in verbosity, and both show keeps_comma_in_quotes failing with 5 passed, 1 failed."
+[case.obs]
+task = "Fix the CSV splitter so quoted fields keep their embedded commas"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo test --quiet" }
+output = '''
+Exit code 101
+running 6 tests
+F.....
+failures:
+
+---- tests::keeps_comma_in_quotes stdout ----
+
+thread 'tests::keeps_comma_in_quotes' panicked at src/lib.rs:21:9:
+assertion `left == right` failed
+  left: ["a", "\"b", "c\""]
+ right: ["a", "b,c"]
+
+failures:
+    tests::keeps_comma_in_quotes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+Exit code 101
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/deps/csvkit-5e2a91c0d3b7f418)
+
+running 6 tests
+test tests::keeps_comma_in_quotes ... FAILED
+test tests::splits_plain_row ... ok
+test tests::trims_nothing ... ok
+test tests::empty_row ... ok
+test tests::single_field ... ok
+test tests::trailing_comma ... ok
+
+failures:
+
+---- tests::keeps_comma_in_quotes stdout ----
+
+thread 'tests::keeps_comma_in_quotes' panicked at src/lib.rs:21:9:
+assertion `left == right` failed
+  left: ["a", "\"b", "c\""]
+ right: ["a", "b,c"]
+
+failures:
+    tests::keeps_comma_in_quotes
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-cargo-test-piped-to-tail"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "Piping `cargo test` through `tail -20` only trims the output; both runs stop on the same E0599 compile error."
+[case.obs]
+task = "Wire the new Reader::parse_row into the import command"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo test" }
+output = '''
+Exit code 101
+   Compiling csvkit v0.3.1 (/work/csvkit)
+error[E0599]: no method named `parse_row` found for struct `Reader` in the current scope
+  --> src/import.rs:57:14
+   |
+57 |     r.parse_row(&line)?;
+   |       ^^^^^^^^^ method not found in `Reader`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `csvkit` (lib test) due to 1 previous error
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo test 2>&1 | tail -20" }
+output = '''
+   Compiling csvkit v0.3.1 (/work/csvkit)
+error[E0599]: no method named `parse_row` found for struct `Reader` in the current scope
+  --> src/import.rs:57:14
+   |
+57 |     r.parse_row(&line)?;
+   |       ^^^^^^^^^ method not found in `Reader`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `csvkit` (lib test) due to 1 previous error
+'''
+
+[[case]]
+id = "rp-hm-pytest-add-x-flag"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "Adding `-x` changes nothing here: the only failure is the last test, so both runs show test_strips_trailing_dash failing with 1 failed, 3 passed."
+[case.obs]
+task = "Stop slugify from leaving a trailing dash"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest -q tests/test_slug.py" }
+output = '''
+Exit code 1
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+__________________________ test_strips_trailing_dash ___________________________
+
+    def test_strips_trailing_dash():
+>       assert slugify("Hello, World!") == "hello-world"
+E       AssertionError: assert 'hello-world-' == 'hello-world'
+
+tests/test_slug.py:19: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_slug.py::test_strips_trailing_dash - AssertionError: assert 'hello-world-' == 'hello-world'
+1 failed, 3 passed in 0.05s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "pytest -q tests/test_slug.py -x" }
+output = '''
+Exit code 1
+...F                                                                     [100%]
+=================================== FAILURES ===================================
+__________________________ test_strips_trailing_dash ___________________________
+
+    def test_strips_trailing_dash():
+>       assert slugify("Hello, World!") == "hello-world"
+E       AssertionError: assert 'hello-world-' == 'hello-world'
+
+tests/test_slug.py:19: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_slug.py::test_strips_trailing_dash - AssertionError: assert 'hello-world-' == 'hello-world'
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 3 passed in 0.05s
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-pytest-drop-q-flag"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "Dropping `-q` only makes the output longer; both runs show test_parse_iso_week failing on the same assertion."
+[case.obs]
+task = "Fix ISO week parsing near the year boundary"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "pytest -q tests/test_dates.py" }
+output = '''
+Exit code 1
+.F...                                                                    [100%]
+=================================== FAILURES ===================================
+_____________________________ test_parse_iso_week ______________________________
+
+    def test_parse_iso_week():
+>       assert parse_iso_week("2025-W01") == date(2024, 12, 30)
+E       assert datetime.date(2025, 12, 29) == datetime.date(2024, 12, 30)
+
+tests/test_dates.py:27: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_dates.py::test_parse_iso_week - assert datetime.date(2025, 12, 29) == datetime.date(2024, 12, 30)
+1 failed, 4 passed in 0.08s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "pytest tests/test_dates.py" }
+output = '''
+Exit code 1
+============================= test session starts ==============================
+platform linux -- Python 3.12.4, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/calendar
+collected 5 items
+
+tests/test_dates.py .F...                                                [100%]
+
+=================================== FAILURES ===================================
+_____________________________ test_parse_iso_week ______________________________
+
+    def test_parse_iso_week():
+>       assert parse_iso_week("2025-W01") == date(2024, 12, 30)
+E       assert datetime.date(2025, 12, 29) == datetime.date(2024, 12, 30)
+
+tests/test_dates.py:27: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_dates.py::test_parse_iso_week - assert datetime.date(2025, 12, 29) == datetime.date(2024, 12, 30)
+========================= 1 failed, 4 passed in 0.08s ==========================
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-grep-dot-slash-path"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`./src` and `src` name the same directory, and both greps find the same two files."
+[case.obs]
+task = "Look into the TODO(perf) notes in the index builder"
+
+[[case.obs.recent_tools]]
+name = "Grep"
+input = { pattern = "TODO\\(perf\\)", path = "./src" }
+output = '''
+Found 2 files
+src/index/build.rs
+src/query/plan.rs
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/searchd/src/index/build.rs", offset = 1, limit = 20 }
+output = '''
+use crate::tokenize::Tokens;
+
+pub struct Builder {
+    postings: Vec<Vec<u32>>,
+}
+'''
+
+[case.obs.tool]
+name = "Grep"
+input = { pattern = "TODO\\(perf\\)", path = "src" }
+output = '''
+Found 2 files
+src/index/build.rs
+src/query/plan.rs
+'''
+
+[[case]]
+id = "rp-hm-grep-quote-style"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "Double and single quotes around a plain pattern are the same to the shell, and both greps print the same two lines."
+[case.obs]
+task = "Find every caller of load_config before changing its signature"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = 'grep -rn "load_config(" src/' }
+output = '''
+src/app/main.py:12:    cfg = load_config(args.config)
+src/app/worker.py:8:    cfg = load_config(os.environ["WORKER_CONFIG"])
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "grep -rn 'load_config(' src/" }
+output = '''
+src/app/main.py:12:    cfg = load_config(args.config)
+src/app/worker.py:8:    cfg = load_config(os.environ["WORKER_CONFIG"])
+'''
+
+[[case]]
+id = "rp-hm-python-m-pytest"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`python -m pytest` and `pytest` run the same tests, and both show test_roundtrip_utf16 failing with the same UnicodeDecodeError."
+[case.obs]
+task = "Make read_text handle UTF-16 files with a BOM"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "python -m pytest -q tests/test_io.py" }
+output = '''
+Exit code 1
+.....F.                                                                  [100%]
+=================================== FAILURES ===================================
+_____________________________ test_roundtrip_utf16 _____________________________
+
+    def test_roundtrip_utf16(tmp_path):
+        p = tmp_path / "a.txt"
+        p.write_text("hé", encoding="utf-16")
+>       assert read_text(p) == "hé"
+
+tests/test_io.py:33:
+E   UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+=========================== short test summary info ============================
+FAILED tests/test_io.py::test_roundtrip_utf16 - UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+1 failed, 6 passed in 0.08s
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "pytest -q tests/test_io.py" }
+output = '''
+Exit code 1
+.....F.                                                                  [100%]
+=================================== FAILURES ===================================
+_____________________________ test_roundtrip_utf16 _____________________________
+
+    def test_roundtrip_utf16(tmp_path):
+        p = tmp_path / "a.txt"
+        p.write_text("hé", encoding="utf-16")
+>       assert read_text(p) == "hé"
+
+tests/test_io.py:33:
+E   UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+=========================== short test summary info ============================
+FAILED tests/test_io.py::test_roundtrip_utf16 - UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+1 failed, 6 passed in 0.07s
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-read-overlapping-limit"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "The file ends at line 22, so offset 18 with limit 40 or limit 80 returns the same five lines."
+[case.obs]
+task = "Add a /metrics route to the router"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/kv/server/router.go", offset = 18, limit = 40 }
+output = '''
+	mux.HandleFunc("/get", s.get)
+	mux.HandleFunc("/put", s.put)
+	mux.HandleFunc("/healthz", s.health)
+	return mux
+}
+'''
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/kv/server/router.go", offset = 18, limit = 80 }
+output = '''
+	mux.HandleFunc("/get", s.get)
+	mux.HandleFunc("/put", s.put)
+	mux.HandleFunc("/healthz", s.health)
+	return mux
+}
+'''
+
+[[case]]
+id = "rp-hm-edit-whitespace-retry"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "The retry changes only the indentation of old_string, and the Edit fails with the same 'String to replace not found' error."
+[case.obs]
+task = "Make the cache lookup return a default instead of raising KeyError"
+
+[[case.obs.recent_tools]]
+name = "Edit"
+input = { file_path = "/work/api/app/cache.py", old_string = "    return self._store[key]", new_string = "    return self._store.get(key, default)" }
+output = '''
+<tool_use_error>String to replace not found in file.
+String:     return self._store[key]</tool_use_error>
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Edit"
+input = { file_path = "/work/api/app/cache.py", old_string = "        return self._store[key]", new_string = "        return self._store.get(key, default)" }
+output = '''
+<tool_use_error>String to replace not found in file.
+String:         return self._store[key]</tool_use_error>
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-npm-test-vs-npm-run-test"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`npm run test` runs the same script as `npm test`, and both show src/utils/date.test.ts failing with 1 failed, 9 passed."
+[case.obs]
+task = "Make formatRelative say yesterday for dates one day ago"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npm test" }
+output = '''
+Exit code 1
+
+> shop-web@1.4.0 test
+> vitest run
+
+
+ RUN  v2.1.4 /work/shop-web
+
+ ❯ src/utils/date.test.ts (4 tests | 1 failed) 12ms
+   × formatRelative > says yesterday for 24h ago 6ms
+     → expected 'in 1 day' to be 'yesterday'
+ ✓ src/utils/money.test.ts (6 tests) 4ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 9 passed (10)
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npm run test" }
+output = '''
+Exit code 1
+
+> shop-web@1.4.0 test
+> vitest run
+
+
+ RUN  v2.1.4 /work/shop-web
+
+ ❯ src/utils/date.test.ts (4 tests | 1 failed) 11ms
+   × formatRelative > says yesterday for 24h ago 5ms
+     → expected 'in 1 day' to be 'yesterday'
+ ✓ src/utils/money.test.ts (6 tests) 4ms
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 9 passed (10)
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-go-test-trailing-slash"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`./internal/store` and `./internal/store/` name the same package, and both runs fail TestCompact the same way."
+[case.obs]
+task = "Fix compaction dropping the newest record"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go test ./internal/store" }
+output = '''
+Exit code 1
+--- FAIL: TestCompact (0.01s)
+    compact_test.go:58: got 2 records after compact, want 3
+FAIL
+FAIL	example.com/kv/internal/store	0.019s
+FAIL
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go test ./internal/store/" }
+output = '''
+Exit code 1
+--- FAIL: TestCompact (0.01s)
+    compact_test.go:58: got 2 records after compact, want 3
+FAIL
+FAIL	example.com/kv/internal/store	0.021s
+FAIL
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-tsc-explicit-default-project"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`-p tsconfig.json` names the project tsc uses by default, and both runs report the same TS2322 error."
+[case.obs]
+task = "Fix the type error in the order form"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "npx tsc --noEmit" }
+output = '''
+Exit code 2
+src/pages/OrderForm.tsx(44,7): error TS2322: Type 'string' is not assignable to type 'number'.
+
+Found 1 error in src/pages/OrderForm.tsx:44
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "npx tsc --noEmit -p tsconfig.json" }
+output = '''
+Exit code 2
+src/pages/OrderForm.tsx(44,7): error TS2322: Type 'string' is not assignable to type 'number'.
+
+Found 1 error in src/pages/OrderForm.tsx:44
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-curl-url-spelling"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "The URL with and without `http://` reaches the same port, and both calls fail with the same connection refused error."
+[case.obs]
+task = "Check that the users endpoint returns JSON"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "curl -sS http://localhost:3000/api/users" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 3000 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "curl -sS localhost:3000/api/users" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 3000 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-script-bash-vs-dot-slash"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "Running the script through `bash` instead of `./` changes nothing, and both runs fail with `jq: command not found` at line 12."
+[case.obs]
+task = "Get scripts/build.sh working on a fresh checkout"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "./scripts/build.sh" }
+output = '''
+Exit code 127
+==> reading version from package.json
+./scripts/build.sh: line 12: jq: command not found
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "bash scripts/build.sh" }
+output = '''
+Exit code 127
+==> reading version from package.json
+scripts/build.sh: line 12: jq: command not found
+'''
+is_error = true
+
+[[case]]
+id = "rp-hm-git-diff-double-dash"
+question = "progress.repeating"
+truth = true
+stratum = "heuristic_miss"
+rationale = "`git diff -- src/app.ts` is the same request as `git diff src/app.ts`, and both print the same one-line hunk."
+[case.obs]
+task = "Review the change to the app entry point before committing"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "git diff src/app.ts" }
+output = '''
+diff --git a/src/app.ts b/src/app.ts
+@@ -3 +3 @@
+-const PORT = 3000;
++const PORT = Number(process.env.PORT ?? 3000);
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "git diff -- src/app.ts" }
+output = '''
+diff --git a/src/app.ts b/src/app.ts
+@@ -3 +3 @@
+-const PORT = 3000;
++const PORT = Number(process.env.PORT ?? 3000);
+'''
+
+# ---- judge_stress: built to trip the judge ----
+
+[[case]]
+id = "rp-js-read-paging-offsets"
+question = "progress.repeating"
+truth = false
+stratum = "judge_stress"
+rationale = "The three Reads page through server.py at offsets 1, 200, and 400 and return different lines."
+[case.obs]
+task = "Find where the websocket handler closes idle connections"
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/chat/chat/server.py", offset = 1, limit = 200 }
+output = '''
+import asyncio
+import logging
+
+from .config import Settings
+from .rooms import RoomRegistry
+
+log = logging.getLogger(__name__)
+'''
+
+[[case.obs.recent_tools]]
+name = "Read"
+input = { file_path = "/work/chat/chat/server.py", offset = 200, limit = 200 }
+output = '''
+    async def join(self, ws, room: str) -> None:
+        self.rooms.add(room, ws)
+        await self.broadcast(room, {"type": "joined"})
+'''
+
+[case.obs.tool]
+name = "Read"
+input = { file_path = "/work/chat/chat/server.py", offset = 400, limit = 200 }
+output = '''
+    async def reap_idle(self) -> None:
+        while True:
+            await asyncio.sleep(self.settings.idle_check_s)
+            for ws in self.rooms.idle(self.settings.idle_timeout_s):
+                await ws.close(code=1001)
+'''
+
+[[case]]
+id = "rp-js-npm-test-other-package"
+question = "progress.repeating"
+truth = false
+stratum = "judge_stress"
+rationale = "The commands test different packages (api, then web), and the results differ: api fails and web passes."
+[case.obs]
+task = "Run the tests in both packages of the monorepo and report failures"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cd api && npm test" }
+output = '''
+Exit code 1
+
+> api@2.0.0 test
+> jest
+
+FAIL src/routes/orders.test.ts
+  ● POST /orders › rejects empty cart
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 400
+    Received: 201
+
+Test Suites: 1 failed, 5 passed, 6 total
+Tests:       1 failed, 23 passed, 24 total
+Snapshots:   0 total
+Time:        3.07 s
+Ran all test suites.
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cd web && npm test" }
+output = '''
+
+> web@1.4.0 test
+> jest
+
+PASS src/cart/total.test.ts
+PASS src/cart/format.test.ts
+
+Test Suites: 2 passed, 2 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        1.62 s
+Ran all test suites.
+'''
+
+[[case]]
+id = "rp-js-ci-poll-status-changed"
+question = "progress.repeating"
+truth = false
+stratum = "judge_stress"
+rationale = "The poll command is identical, but the run status moved from queued to in_progress."
+[case.obs]
+task = "Push the fix and wait for CI to finish"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "gh run view 8812 --json status,conclusion" }
+output = '''
+{"conclusion":"","status":"queued"}
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "gh run view 8812 --json status,conclusion" }
+output = '''
+{"conclusion":"","status":"in_progress"}
+'''
+
+[[case]]
+id = "rp-js-go-test-different-run-filter"
+question = "progress.repeating"
+truth = false
+stratum = "judge_stress"
+rationale = "The `-run` filter names a different test, and a different test fails with a different message."
+[case.obs]
+task = "Fix the HTTP request parser tests"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go test -run TestParseHeader ./httpx" }
+output = '''
+Exit code 1
+--- FAIL: TestParseHeader (0.00s)
+    parse_test.go:30: header "X-Id" = "", want "42"
+FAIL
+FAIL	example.com/proxy/httpx	0.003s
+FAIL
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go test -run TestParseBody ./httpx" }
+output = '''
+Exit code 1
+--- FAIL: TestParseBody (0.00s)
+    parse_test.go:71: body length = 0, want 11 (chunked encoding not handled)
+FAIL
+FAIL	example.com/proxy/httpx	0.003s
+FAIL
+'''
+is_error = true
+
+[[case]]
+id = "rp-js-tail-log-new-lines"
+question = "progress.repeating"
+truth = false
+stratum = "judge_stress"
+rationale = "The tail command is identical, but the log gained new lines and now ends with job 1043 done instead of job 1042 started."
+[case.obs]
+task = "Watch the worker log until the reindex job finishes"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "tail -n 3 logs/worker.log" }
+output = '''
+12:00:01 job 1041 done
+12:00:02 job 1042 started
+12:00:02 job 1042 step 1/3
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "tail -n 3 logs/worker.log" }
+output = '''
+12:00:09 job 1042 step 3/3
+12:00:10 job 1042 done
+12:00:10 job 1043 started
+'''
+
+[[case]]
+id = "rp-js-sleep-curl-retry"
+question = "progress.repeating"
+truth = true
+stratum = "judge_stress"
+rationale = "Only the sleep before the curl changes, nothing started the server, and all three calls fail with the same connection refused error."
+[case.obs]
+task = "Check that the Go server's /healthz endpoint responds"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "curl -sS http://localhost:8080/healthz" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 8080 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "sleep 5 && curl -sS http://localhost:8080/healthz" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 8080 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "sleep 10 && curl -sS http://localhost:8080/healthz" }
+output = '''
+Exit code 7
+curl: (7) Failed to connect to localhost port 8080 after 0 ms: Couldn't connect to server
+'''
+is_error = true
+
+[[case]]
+id = "rp-js-go-test-flag-order"
+question = "progress.repeating"
+truth = true
+stratum = "judge_stress"
+rationale = "`-v -race` and `-race -v` are the same flags in a different order, and TestEvict fails the same way; only the timing differs."
+[case.obs]
+task = "Fix the data race in the cache eviction path"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "go test -v -race ./internal/cache" }
+output = '''
+Exit code 1
+=== RUN   TestEvict
+--- FAIL: TestEvict (0.00s)
+    cache_test.go:41: len = 3, want 2
+FAIL
+FAIL	example.com/kv/internal/cache	1.021s
+FAIL
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "go test -race -v ./internal/cache" }
+output = '''
+Exit code 1
+=== RUN   TestEvict
+--- FAIL: TestEvict (0.00s)
+    cache_test.go:41: len = 3, want 2
+FAIL
+FAIL	example.com/kv/internal/cache	1.034s
+FAIL
+'''
+is_error = true
+
+[[case]]
+id = "rp-js-cargo-build-long-output"
+question = "progress.repeating"
+truth = true
+stratum = "judge_stress"
+rationale = "Adding `2>&1` changes nothing in this shell, and both builds start and end the same way, with 1 error and 3 warnings."
+[case.obs]
+task = "Get the report binary building after the config refactor"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "cargo build" }
+output = '''
+Exit code 101
+   Compiling report v0.1.0 (/work/report)
+warning: unused import: `std::collections::HashMap`
+ --> src/main.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `verbose`
+  --> src/main.rs:22:9
+   |
+22 |     let verbose = args.verbose;
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_verbose`
+
+warning: function `legacy_path` is never used
+  --> src/config.rs:40:4
+   |
+40 | fn legacy_path() -> PathBuf {
+   |    ^^^^^^^^^^^
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/main.rs:31:18
+   |
+31 |     let cfg = Config::load(&path)?;
+   |               ^^^^^^^^^^^^------- argument #2 of type `Profile` is missing
+
+warning: `report` (bin "report") generated 3 warnings
+error: could not compile `report` (bin "report") due to 1 previous error; 3 warnings emitted
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "cargo build 2>&1" }
+output = '''
+Exit code 101
+   Compiling report v0.1.0 (/work/report)
+warning: unused import: `std::collections::HashMap`
+ --> src/main.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `verbose`
+  --> src/main.rs:22:9
+   |
+22 |     let verbose = args.verbose;
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_verbose`
+
+warning: function `legacy_path` is never used
+  --> src/config.rs:40:4
+   |
+40 | fn legacy_path() -> PathBuf {
+   |    ^^^^^^^^^^^
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/main.rs:31:18
+   |
+31 |     let cfg = Config::load(&path)?;
+   |               ^^^^^^^^^^^^------- argument #2 of type `Profile` is missing
+
+warning: `report` (bin "report") generated 3 warnings
+error: could not compile `report` (bin "report") due to 1 previous error; 3 warnings emitted
+'''
+is_error = true
+
+[[case]]
+id = "rp-js-sleep-then-poll-finished-run"
+question = "progress.repeating"
+truth = true
+stratum = "judge_stress"
+rationale = "The run had already completed with failure, and polling it again after a sleep returns the identical JSON."
+[case.obs]
+task = "Push the fix and wait for CI to finish"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "gh run view 8812 --json status,conclusion" }
+output = '''
+{"conclusion":"failure","status":"completed"}
+'''
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "sleep 30 && gh run view 8812 --json status,conclusion" }
+output = '''
+{"conclusion":"failure","status":"completed"}
+'''
+
+[[case]]
+id = "rp-js-compose-up-port-taken-new-hash"
+question = "progress.repeating"
+truth = true
+stratum = "judge_stress"
+rationale = "The same command fails with the same 'port is already allocated' error on 8080; only the endpoint hash differs."
+[case.obs]
+task = "Start the API container locally"
+
+[[case.obs.recent_tools]]
+name = "Bash"
+input = { command = "docker compose up -d api" }
+output = '''
+Exit code 1
+ Container api-api-1  Starting
+Error response from daemon: driver failed programming external connectivity on endpoint api-api-1 (3f9ac21e): Bind for 0.0.0.0:8080 failed: port is already allocated
+'''
+is_error = true
+
+[case.obs.tool]
+name = "Bash"
+input = { command = "docker compose up -d api" }
+output = '''
+Exit code 1
+ Container api-api-1  Starting
+Error response from daemon: driver failed programming external connectivity on endpoint api-api-1 (b71d04c9): Bind for 0.0.0.0:8080 failed: port is already allocated
+'''
+is_error = true
