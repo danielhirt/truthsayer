@@ -1,10 +1,30 @@
-# truthsayer
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner-light.svg" width="100%" alt="truthsayer. The model scores. Code decides. A plot of 180 labeled eval cases on a scale from 0 to 1: cases whose true answer is no gather near 0, cases whose true answer is yes gather near 1, and few fall in the uncertain band between 0.3 and 0.7.">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/danielhirt/truthsayer/actions/workflows/ci.yml"><img src="https://github.com/danielhirt/truthsayer/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+  <a href="evals/runs/2026-09-26-jev/summary.md"><img src="https://img.shields.io/badge/synthetic%20eval-526%2F540%20correct-2a78d6" alt="Synthetic eval: 526 of 540 answers correct"></a>
+  <img src="https://img.shields.io/badge/rust-1.88%2B-59636e" alt="Rust 1.88 or later">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-59636e" alt="MIT license"></a>
+</p>
 
 Calibrated yes-or-no checks for AI coding agents.
 
 An agent makes many small judgments in each turn. Did the command fail? Did the edit change behavior? Is the agent in a loop? Did a file tell the agent to ignore its instructions? Is the claim "all tests pass" supported by a test run?
 
 truthsayer sends these judgments as typed questions to a decision model. The model returns a calibrated probability for each question. Rules in code then decide what to do. The model gives the scores, and code makes the decisions.
+
+```mermaid
+flowchart LR
+    event["Hook event<br/>edit, tool result, or stop"] --> obs["Observation<br/>capped and redacted"]
+    obs --> judge["Decision model<br/>one probability per question"]
+    judge --> rules["Rules in code<br/>for example: at least 0.7"]
+    rules --> action["Proceed, warn,<br/>escalate, or halt"]
+```
 
 The decision model is TypeSafe's Jev. truthsayer calls the TypeSafe API directly, or through OpenRouter if you prefer. A check costs approximately $0.00003.
 
@@ -172,6 +192,7 @@ crates/truthsayer-cli/  the truthsayer binary and the Claude Code hook
 plugin/                 the Claude Code plugin
 docs/                   design, rubric format, and integration guides
 evals/                  labeled synthetic cases and eval results
+assets/                 the README banner and the script that draws it
 ```
 
 ## Documentation
@@ -184,7 +205,25 @@ evals/                  labeled synthetic cases and eval results
 - [Rubrics](docs/rubrics.md): the rubric format, and how to write questions that the judge answers well.
 - [Harness integration](docs/harness-integration.md): where an agent harness calls the supervisor.
 
-## Build on macOS
+## Build and test
+
+```sh
+cargo test --workspace
+```
+
+CI runs on each push to `main` and on each pull request. The [latest runs](https://github.com/danielhirt/truthsayer/actions/workflows/ci.yml) show the result of each job:
+
+| Job | What it checks |
+| --- | --- |
+| fmt and clippy | `cargo fmt --check`, `cargo clippy` with warnings as errors, `shellcheck` on the hook script, and valid JSON in the rubric and plugin files |
+| test | The full test suite on Ubuntu and macOS. The tests use a scripted judge and a local HTTP server, so they make no calls to a paid API. |
+| minimum Rust version | The workspace builds on Rust 1.88 |
+
+The synthetic evals call the live judge, so CI does not run them. To run them, see [Synthetic evals](evals/README.md).
+
+To draw the banner again from a new eval run, run `uv run assets/make_banner.py evals/runs/<run>`. The script needs the Geist font and `rsvg-convert`.
+
+### Build on macOS
 
 The crate links with the system `cc`. If you did not accept the Xcode license, build with the standalone command-line tools:
 
