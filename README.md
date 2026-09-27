@@ -6,7 +6,7 @@ An agent makes many small judgments in each turn. Did the command fail? Did the 
 
 truthsayer sends these judgments as typed questions to a decision model. The model returns a calibrated probability for each question. Rules in code then decide what to do. The model gives the scores, and code makes the decisions.
 
-The decision model is TypeSafe's Jev. truthsayer calls the TypeSafe API directly, or through OpenRouter if you prefer. A check costs approximately $0.00005.
+The decision model is TypeSafe's Jev. truthsayer calls the TypeSafe API directly, or through OpenRouter if you prefer. A check costs approximately $0.00003.
 
 ## Use it with Claude Code
 
@@ -138,9 +138,30 @@ These are the results of the live judge, `jev-1.13.0` through the TypeSafe API, 
 | "All tests pass" with no test run in the turn | Warn | `unverified_claim` 0.96 |
 | The same claim after `cargo test` passes | Proceed | `unverified_claim` 0.13 |
 
+### Synthetic evals
+
+The `evals/synthetic` directory holds 180 labeled cases, 60 for each deciding question. On 2026-09-26, `jev-1.13.0` answered each case three times, 540 calls for $0.016. The table shows the share of answers that were correct, with the judge at its rule threshold of 0.7:
+
+| Question | Canonical cases: judge | Canonical cases: heuristic | All cases: judge | All cases: heuristic |
+| --- | --- | --- | --- | --- |
+| `injected_instructions` | 60/60 | 60/60 | 180/180 | 75/180 |
+| `repeating` | 60/60 | 60/60 | 170/180 | 72/180 |
+| `unverified_claim` | 60/60 | 60/60 | 176/180 | 72/180 |
+
+Read these results with care:
+
+- **Most cases are made to break the heuristic.** On the canonical cases, both methods are correct. Of the other 120 cases, 90 are made to cause heuristic errors. Thus, the "all cases" columns favor the judge.
+- **The judge has a known weakness on `repeating`.** It said yes (0.78 to 0.88) when an agent repeated a call to confirm a change: a `Read` after an `Edit`, an `ls` after a build, and a `git log` after a commit. The output was different each time. In a live session, this weakness gives a false warning on a normal check.
+- **The cases are synthetic.** The results show what the judge can do. They do not show how accurate the judge is on real sessions.
+- **A model wrote the cases.** A person has not yet reviewed the labels. Each case has a rationale, so you can check its label.
+
+For the method, the strata, and all cases that the judge got wrong, see [Synthetic evals](evals/README.md) and the [run summary](evals/runs/2026-09-26-jev/summary.md).
+
 ## Status
 
-Early. The Rust crate, the command-line tool, and the Claude Code plugin work end to end against the live TypeSafe API. The thresholds are from hand-written cases and a small number of real sessions. The next step is to collect records from more sessions and tune the thresholds. For the process, see [Tune the thresholds](docs/tuning.md).
+Early. The Rust crate, the command-line tool, and the Claude Code plugin work end to end against the live TypeSafe API. The thresholds are from hand-written cases and a small number of real sessions.
+
+truthsayer does not yet claim that it makes an agent cheaper or faster. The synthetic evals measure how well the judge labels mistakes, not what happens to a session when truthsayer acts. The next step is an end-to-end benchmark that runs Claude Code sessions with and without truthsayer and measures cost, tool calls, and task success. For the plan and its decision rules, see [End-to-end benchmark plan](docs/benchmark-plan.md). To tune the thresholds on your own sessions, see [Tune the thresholds](docs/tuning.md).
 
 ## Repository layout
 
@@ -150,12 +171,15 @@ crates/truthsayer/      Rust library: judge, supervisor, redaction, and record s
 crates/truthsayer-cli/  the truthsayer binary and the Claude Code hook
 plugin/                 the Claude Code plugin
 docs/                   design, rubric format, and integration guides
+evals/                  labeled synthetic cases and eval results
 ```
 
 ## Documentation
 
 - [Use truthsayer with Claude Code](docs/claude-code.md): events, modes, configuration, records, and privacy.
 - [Tune the thresholds](docs/tuning.md): label recorded answers, measure each question, and replay rule changes.
+- [Synthetic evals](evals/README.md): the labeled case set, and how to run it against the judge.
+- [End-to-end benchmark plan](docs/benchmark-plan.md): how truthsayer's effect on real sessions will be measured.
 - [Design](docs/design.md): why truthsayer uses a decision model, and how the parts connect.
 - [Rubrics](docs/rubrics.md): the rubric format, and how to write questions that the judge answers well.
 - [Harness integration](docs/harness-integration.md): where an agent harness calls the supervisor.
